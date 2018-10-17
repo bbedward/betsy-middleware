@@ -59,7 +59,7 @@ async def rpc(request):
         return web.HTTPBadRequest(reason='Missing hash in request')
 
     # See if work is in cache
-    work = request.app['redis'].get(requestjson['hash'])
+    work = await request.app['redis'].get(requestjson['hash'])
     if work is not None:
         return web.json_response({"work":work})
 
@@ -68,7 +68,7 @@ async def rpc(request):
     if respjson is None:
         return web.HTTPError(reason="Couldn't generate work")
     else:
-        request.app['redis'].set(requestjson['hash'], respjson['work'])
+        await request.app['redis'].set(requestjson['hash'], respjson['work'], expire=259200)
     return web.json_response(respjson)
 
 ### END API
