@@ -5,6 +5,8 @@ import aioredis
 from aiohttp import ClientSession, log, web
 
 import settings
+from main import requestjson
+
 
 ### PEER-related functions
 
@@ -52,15 +54,23 @@ async def work_generate(hash):
 
 async def rpc(request):
     requestjson = await request.json()
+    log.server_logger.debug(f"Received request {str(requestjson)}")
     if 'action' not in requestjson or requestjson['action'] != 'work_generate':
         return web.HTTPBadRequest(reason='invalid action')
     elif 'hash' not in requestjson:
         return web.HTTPBadRequest(reason='Missing hash in request')
 
-    log.server_logger.debug(f"Received request {str(requestjson)}")
+    # See if work is in cache
+    work = request.app['redis'].get(requestjson['hash'])
+    if work is not None:
+        return web.json_response({"work":work})
+
+    # Not in cache, request it from peers
     respjson = await work_generate(requestjson['hash'])
     if respjson is None:
         return web.HTTPError(reason="Couldn't generate work")
+    else:
+        request.app['redis'].set(requestjson['hash'], respjson['work'])
     return web.json_response(respjson)
 
 ### END API
