@@ -5,8 +5,6 @@ import aioredis
 from aiohttp import ClientSession, log, web
 
 import settings
-from main import requestjson
-
 
 ### PEER-related functions
 
