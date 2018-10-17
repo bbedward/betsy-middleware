@@ -90,4 +90,4 @@ async def get_app():
 
     return app
 
-work_app = get_app()
+work_app = asyncio.get_event_loop().run_until_complete(get_app())

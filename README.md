@@ -7,3 +7,7 @@
 2) Run server
 
 3) Use as standard work peer
+
+# running:
+
+gunicorn main:work_app --bind localhost:8080 --worker-class aiohttp.worker.GunicornWebWorker
