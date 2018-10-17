@@ -1,17 +1,33 @@
 import asyncio
 import logging
-
+import json
 import aioredis
 from aiohttp import ClientSession, log, web
 
 import settings
 
+# Callback forwarding
+CALLBACK_FORWARDS = []
+try:
+	CALLBACK_FORWARDS=settings.CALLBACK_FORWARD
+except Exception:
+	pass
+
+# Node configuration
+NODE_URL = None
+NODE_PORT = None
+try:
+    NODE_URL=settings.NODE_URL
+    NODE_PORT=settings.NODE_PORT
+except Exception:
+    pass
+
 ### PEER-related functions
 
-async def json_get(url, request):
+async def json_get(url, request, timeout=settings.TIMEOUT):
     try:
         async with ClientSession() as session:
-            async with session.post(url, json=request, timeout=settings.TIMEOUT) as resp:
+            async with session.post(url, json=request, timeout=timeout) as resp:
                 return await resp.json()
     except Exception as e:
         log.server_logger.error(e)
@@ -42,9 +58,19 @@ async def work_generate(hash):
                 asyncio.ensure_future(work_cancel(hash))
                 return task.result()
     # Fallback method
-    if settings.NODE_FALLBACK:
-        return await json_get(f"http://{settings.NODE_URL}:{settings.NODE_PORT}", request)
+    if settings.NODE_FALLBACK and NODE_URL and NODE_PORT:
+        return await json_get(f"http://{NODE_URL}:{NODE_PORT}", request, timeout=300)
     return None
+
+async def precache_queue_process(app, queue):
+    while True:
+        item = await queue.get()
+        if item is None:
+            continue
+        work_response = await work_generate(str(item))
+        if work_response is None or 'work' not in work_response:
+            continue
+        await app['redis'].set(str(item), work_response['work'], expire=600000)
 
 ### END PEER-related functions
 
@@ -52,7 +78,7 @@ async def work_generate(hash):
 
 async def rpc(request):
     requestjson = await request.json()
-    log.server_logger.debug(f"Received request {str(requestjson)}")
+    log.server_logger.info(f"Received request {str(requestjson)}")
     if 'action' not in requestjson or requestjson['action'] != 'work_generate':
         return web.HTTPBadRequest(reason='invalid action')
     elif 'hash' not in requestjson:
@@ -68,8 +94,28 @@ async def rpc(request):
     if respjson is None:
         return web.HTTPError(reason="Couldn't generate work")
     else:
-        await request.app['redis'].set(requestjson['hash'], respjson['work'], expire=259200)
+        await request.app['redis'].set(requestjson['hash'], respjson['work'], expire=600000)
     return web.json_response(respjson)
+
+async def callback(request):
+    requestjson = await request.json()
+    hash = requestjson['hash']
+    log.server_logger.info(f"callback received {hash}")
+    # Forward callback
+    for c in CALLBACK_FORWARDS:
+        await asyncio.ensure_future(json_get(c, requestjson))
+    # Precache POW if necessary
+    if not settings.Precache:
+        return
+    have_pow = await request.app['redis'].get(hash)
+    if have_pow is not None:
+        return # Already computed POW for this hash
+    block = json.loads(requestjson['block'])
+    previous_pow = await request.app['redis'].get(block['previous'])
+    if previous_pow is None:
+        return # They've never requested work from us before so we don't care
+    else:
+        request.app['precache_queue'].put(block['previous'])
 
 ### END API
 
@@ -87,13 +133,25 @@ async def get_app():
         app['redis'] = await aioredis.create_redis(('localhost', 6379),
                                                 db=1, encoding='utf-8')
 
+    async def init_queue(app):
+        """Initialize task queue"""
+        app['precache_queue'] = asyncio.Queue(loop=loop)
+        app['precache_task'] = app.loop.create_task(precache_queue_process(app, app['precache_queue']))
+
+    async def clear_queue(app):
+        app['precache_task'].cancel()
+        await app['precache_task']
+
     if settings.DEBUG:
         logging.basicConfig(level='DEBUG')
     else:
         logging.basicConfig(level='INFO')
     app = web.Application()
     app.add_routes([web.post('/', rpc)])
+    app.add_routes([web.post('/callback', callback)])
     app.on_startup.append(open_redis)
+    app.on_startup.append(init_queue)
+    app.on_cleanup.append(clear_queue)
     app.on_shutdown.append(close_redis)
 
     return app
