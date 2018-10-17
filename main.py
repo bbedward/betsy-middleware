@@ -39,11 +39,11 @@ async def work_generate(hash):
         for task in done:
             result = task.result()
             if result is not None:
-                work_cancel(hash)
+                asyncio.ensure_future(work_cancel(hash))
                 return task.result()
     # Fallback method
     if settings.NODE_FALLBACK:
-        return await json_get(f"https://{settings.NODE_URL}:{settings.NODE_PORT}", request)
+        return await json_get(f"http://{settings.NODE_URL}:{settings.NODE_PORT}", request)
     return None
 
 ### END PEER-related functions
