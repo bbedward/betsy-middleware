@@ -105,7 +105,7 @@ async def rpc(request):
     return web.json_response(respjson)
 
 async def callback(request):
-    requestjson = await request.json()
+    requestjson = json.loads(await request.read())
     hash = requestjson['hash']
     log.server_logger.debug(f"callback received {hash}")
     # Forward callback
