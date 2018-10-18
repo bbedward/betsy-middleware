@@ -48,7 +48,13 @@ async def work_generate(hash):
     request = {"action":"work_generate", "hash":hash}
     tasks = []
     for p in settings.WORK_SERVERS:
-        tasks.append(json_get(p, request))
+        split_p = p.split('?key=')
+        if len(split_p) > 1:
+            request['key'] = split_p[1]
+        else:
+            if 'key' in request:
+                del request['key']
+        tasks.append(json_get(split_p[0], request))
 
     while len(tasks):
         done, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
@@ -65,6 +71,7 @@ async def work_generate(hash):
 async def precache_queue_process(app, queue):
     while True:
         item = await queue.get()
+        log.server_logger.info(f"precaching {str(item)}")
         if item is None:
             continue
         work_response = await work_generate(str(item))
@@ -105,7 +112,7 @@ async def callback(request):
     for c in CALLBACK_FORWARDS:
         await asyncio.ensure_future(json_get(c, requestjson))
     # Precache POW if necessary
-    if not settings.Precache:
+    if not settings.PRECACHE:
         return
     have_pow = await request.app['redis'].get(hash)
     if have_pow is not None:
@@ -113,9 +120,10 @@ async def callback(request):
     block = json.loads(requestjson['block'])
     previous_pow = await request.app['redis'].get(block['previous'])
     if previous_pow is None:
-        return # They've never requested work from us before so we don't care
+        return web.Response(status=200) # They've never requested work from us before so we don't care
     else:
         request.app['precache_queue'].put(block['previous'])
+    return web.Response(status=200)
 
 ### END API
 
@@ -135,7 +143,7 @@ async def get_app():
 
     async def init_queue(app):
         """Initialize task queue"""
-        app['precache_queue'] = asyncio.Queue(loop=loop)
+        app['precache_queue'] = asyncio.Queue(loop=app.loop)
         app['precache_task'] = app.loop.create_task(precache_queue_process(app, app['precache_queue']))
 
     async def clear_queue(app):
