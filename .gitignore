@@ -102,4 +102,9 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# vscode
 .vscode
+
+# app
+settings.py
