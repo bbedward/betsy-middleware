@@ -107,7 +107,7 @@ async def rpc(request):
 async def callback(request):
     requestjson = await request.json()
     hash = requestjson['hash']
-    log.server_logger.info(f"callback received {hash}")
+    log.server_logger.debug(f"callback received {hash}")
     # Forward callback
     for c in CALLBACK_FORWARDS:
         await asyncio.ensure_future(json_get(c, requestjson))
