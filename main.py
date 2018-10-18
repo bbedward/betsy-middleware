@@ -22,6 +22,8 @@ try:
 except Exception:
     pass
 
+PRECACHE_Q_KEY = 'betsy_pcache_q'
+
 ### PEER-related functions
 
 async def json_get(url, request, timeout=settings.TIMEOUT):
@@ -70,16 +72,17 @@ async def work_generate(hash, redis):
         return await json_get(f"http://{NODE_URL}:{NODE_PORT}", request, timeout=300)
     return None
 
-async def precache_queue_process(app, queue):
+async def precache_queue_process(app):
     while True:
         if app['busy']:
             # Wait and try precache again later
             asyncio.sleep(5)
             continue
 
-        # Pop item off the queue (blocking)
-        hash = str(await queue.get())
+        # Pop item off the queue
+        hash = await app['redis'].lpop(PRECACHE_Q_KEY)
         if hash is None:
+            asyncio.sleep(3) # Delay before checking again
             continue
         # See if already have this hash cached
         have_pow = await app['redis'].get(hash)
@@ -137,7 +140,7 @@ async def callback(request):
     if previous_pow is None:
         return web.Response(status=200) # They've never requested work from us before so we don't care
     else:
-        await request.app['precache_queue'].put(hash)
+        await request.app['redis'].rpush(PRECACHE_Q_KEY, hash)
     return web.Response(status=200)
 
 ### END API
@@ -158,8 +161,7 @@ async def get_app():
 
     async def init_queue(app):
         """Initialize task queue"""
-        app['precache_queue'] = asyncio.Queue(loop=app.loop)
-        app['precache_task'] = app.loop.create_task(precache_queue_process(app, app['precache_queue']))
+        app['precache_task'] = app.loop.create_task(precache_queue_process(app))
 
     async def clear_queue(app):
         app['precache_task'].cancel()
