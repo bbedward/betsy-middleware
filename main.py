@@ -84,7 +84,7 @@ async def precache_queue_process(app, queue):
 ### API
 
 async def rpc(request):
-    requestjson = await request.json()
+    requestjson = json.loads(await request.read())
     log.server_logger.info(f"Received request {str(requestjson)}")
     if 'action' not in requestjson or requestjson['action'] != 'work_generate':
         return web.HTTPBadRequest(reason='invalid action')
