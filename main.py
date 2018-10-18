@@ -22,6 +22,8 @@ try:
 except Exception:
     pass
 
+PRECACHE_Q_KEY='betsy_precache_queue'
+
 ### PEER-related functions
 
 async def json_get(url, request, timeout=settings.TIMEOUT):
@@ -68,12 +70,12 @@ async def work_generate(hash):
         return await json_get(f"http://{NODE_URL}:{NODE_PORT}", request, timeout=300)
     return None
 
-async def precache_queue_process(app, queue):
+async def precache_queue_process(app):
     while True:
-        item = await queue.get()
-        log.server_logger.info(f"precaching {str(item)}")
+        item = await app['redis'].blpop(PRECACHE_Q_KEY)
         if item is None:
             continue
+        log.server_logger.info(f"precaching {str(item)}")
         work_response = await work_generate(str(item))
         if work_response is None or 'work' not in work_response:
             continue
@@ -125,7 +127,7 @@ async def callback(request):
     if previous_pow is None:
         return web.Response(status=200) # They've never requested work from us before so we don't care
     else:
-        request.app['precache_queue'].put(block['previous'])
+        await request.app['redis'].rpush(PRECACHE_Q_KEY, block['previous'])
     return web.Response(status=200)
 
 ### END API
@@ -146,8 +148,7 @@ async def get_app():
 
     async def init_queue(app):
         """Initialize task queue"""
-        app['precache_queue'] = asyncio.Queue(loop=app.loop)
-        app['precache_task'] = app.loop.create_task(precache_queue_process(app, app['precache_queue']))
+        app['precache_task'] = app.loop.create_task(precache_queue_process(app))
 
     async def clear_queue(app):
         app['precache_task'].cancel()
