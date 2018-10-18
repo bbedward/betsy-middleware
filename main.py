@@ -28,7 +28,7 @@ async def json_get(url, request, timeout=settings.TIMEOUT):
     try:
         async with ClientSession() as session:
             async with session.post(url, json=request, timeout=timeout) as resp:
-                return await resp.json()
+                return json.loads(await resp.read())
     except Exception as e:
         log.server_logger.error(e)
         return None
