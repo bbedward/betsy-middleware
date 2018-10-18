@@ -48,6 +48,20 @@ This requires you to setup the callback in node config as follows:
 "callback_target": "/callback",
 ```
 
+5) For work, you can use this as a standard work peer, in node config:
+
+```
+work_peers: [
+  "::ffff:127.0.0.1:5555"
+]
+```
+
+Or you can post work_generate requests directly
+
+```
+curl -g -d '{"action":"work_generate", "hash":"ECCB8CB65CD3106EDA8CE9AA893FEAD497A91BCA903890CBD7A5C59F06AB9113"}' '127.0.0.1:5555'
+```
+
 ## Setup
 
 1.) Install python 3.6+
