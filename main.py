@@ -76,13 +76,13 @@ async def precache_queue_process(app):
     while True:
         if app['busy']:
             # Wait and try precache again later
-            asyncio.sleep(5)
+            await asyncio.sleep(5)
             continue
 
         # Pop item off the queue
         hash = await app['redis'].lpop(PRECACHE_Q_KEY)
         if hash is None:
-            asyncio.sleep(3) # Delay before checking again
+            await asyncio.sleep(3) # Delay before checking again
             continue
         # See if already have this hash cached
         have_pow = await app['redis'].get(hash)
