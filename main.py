@@ -113,11 +113,14 @@ async def callback(request):
         await asyncio.ensure_future(json_get(c, requestjson))
     # Precache POW if necessary
     if not settings.PRECACHE:
-        return
+        return web.Response(status=200)
     have_pow = await request.app['redis'].get(hash)
     if have_pow is not None:
-        return # Already computed POW for this hash
+        return web.Response(status=200) # Already computed POW for this hash
     block = json.loads(requestjson['block'])
+    if 'previous' not in block:
+        log.server_logger.info(f"previous not in block from callback {str(block)}")
+        return web.Response(status=200)
     previous_pow = await request.app['redis'].get(block['previous'])
     if previous_pow is None:
         return web.Response(status=200) # They've never requested work from us before so we don't care
