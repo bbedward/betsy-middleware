@@ -30,7 +30,7 @@ async def json_get(url, request, timeout=settings.TIMEOUT):
     try:
         async with ClientSession() as session:
             async with session.post(url, json=request, timeout=timeout) as resp:
-                return json.loads(await resp.read())
+                return await resp.json(content_type=None)
     except Exception as e:
         log.server_logger.error(e)
         return None
@@ -72,7 +72,8 @@ async def work_generate(hash):
 
 async def precache_queue_process(app):
     while True:
-        item = await app['redis'].blpop(PRECACHE_Q_KEY)
+        await asyncio.sleep(5)
+        item = await app['redis'].lpop(PRECACHE_Q_KEY)
         if item is None:
             continue
         log.server_logger.info(f"precaching {str(item)}")
@@ -86,7 +87,7 @@ async def precache_queue_process(app):
 ### API
 
 async def rpc(request):
-    requestjson = json.loads(await request.read())
+    requestjson = await request.json()
     log.server_logger.info(f"Received request {str(requestjson)}")
     if 'action' not in requestjson or requestjson['action'] != 'work_generate':
         return web.HTTPBadRequest(reason='invalid action')
@@ -107,7 +108,7 @@ async def rpc(request):
     return web.json_response(respjson)
 
 async def callback(request):
-    requestjson = json.loads(await request.read())
+    requestjson = await request.json()
     hash = requestjson['hash']
     log.server_logger.debug(f"callback received {hash}")
     # Forward callback
