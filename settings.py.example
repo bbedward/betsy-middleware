@@ -14,3 +14,5 @@ DEBUG=False
 PRECACHE=False # Set to True if you want  work to be precached (requires callback to be configured)
 NODE_FALLBACK=True # Set to False if you never want to request work from node specified above
 TIMEOUT=10 # How long to wait for each individual work peer to respond, before trying fallback
+
+LOG_FILE='/tmp/betsy.log'

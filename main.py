@@ -2,9 +2,15 @@ import asyncio
 import logging
 import json
 import aioredis
+import datetime
 from aiohttp import ClientSession, log, web
+from logging.handlers import TimedRotatingFileHandler, WatchedFileHandler
+import uvloop
+import sys
 
 import settings
+
+uvloop.install()
 
 # Callback forwarding
 CALLBACK_FORWARDS = []
@@ -26,13 +32,17 @@ PRECACHE_Q_KEY = 'betsy_pcache_q'
 
 ### PEER-related functions
 
-async def json_get(url, request, timeout=settings.TIMEOUT):
+async def json_post(url, request, timeout=settings.TIMEOUT, app=None):
     try:
         async with ClientSession() as session:
             async with session.post(url, json=request, timeout=timeout) as resp:
                 return await resp.json(content_type=None)
     except Exception as e:
-        log.server_logger.error(e)
+        log.server_logger.exception(e)
+        if app is not None:
+            app['failover'] = True
+            if app['failover_dt'] is None:
+                app['failover_dt'] = datetime.datetime.utcnow()
         return None
 
 async def work_cancel(hash):
@@ -41,13 +51,14 @@ async def work_cancel(hash):
     tasks = []
     for p in settings.WORK_SERVERS:
         if '?key' not in p: # dPOW doesn't support work_cancel
-            tasks.append(json_get(p, request))
+            tasks.append(json_post(p, request))
     # Don't care about waiting for any responses on work_cancel
     for t in tasks:
         asyncio.ensure_future(t)
 
-async def work_generate(hash, redis):
+async def work_generate(hash, app):
     """RPC work_generate"""
+    redis = app['redis']
     request = {"action":"work_generate", "hash":hash}
     tasks = []
     for p in settings.WORK_SERVERS:
@@ -57,7 +68,16 @@ async def work_generate(hash, redis):
         else:
             if 'key' in request:
                 del request['key']
-        tasks.append(json_get(split_p[0], request))
+        tasks.append(json_post(split_p[0], request, app=app))
+
+    if settings.NODE_FALLBACK and app['failover'] and NODE_URL and NODE_PORT:
+        # Failover to the node since we have some requests that are failing
+        # If its been an hour since a work request failed, disable failover mode
+        if app['failover_dt'] is not None and (datetime.datetime.utcnow() - app['failover_dt']).total_seconds() > 3600:
+            app['failover'] = False
+            app['failover_dt'] = None
+        else:
+            tasks.append(json_post(f"http://{NODE_URL}:{NODE_PORT}", request, timeout=30))
 
     while len(tasks):
         done, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
@@ -67,13 +87,15 @@ async def work_generate(hash, redis):
                 asyncio.ensure_future(work_cancel(hash))
                 await redis.set(hash, result['work'], expire=600000) # Cache work
                 return task.result()
+
     # Fallback method
     if settings.NODE_FALLBACK and NODE_URL and NODE_PORT:
-        return await json_get(f"http://{NODE_URL}:{NODE_PORT}", request, timeout=300)
+        return await json_post(f"http://{NODE_URL}:{NODE_PORT}", request, timeout=30)
+
     return None
 
 async def precache_queue_process(app):
-    while True:
+    while True and settings.PRECACHE:
         if app['busy']:
             # Wait and try precache again later
             await asyncio.sleep(5)
@@ -89,7 +111,7 @@ async def precache_queue_process(app):
         if have_pow is not None:
             continue # Already cached
         log.server_logger.info(f"precaching {hash}")
-        await work_generate(hash, app['redis'])
+        await work_generate(hash, app)
 
 ### END PEER-related functions
 
@@ -111,16 +133,16 @@ async def rpc(request):
     # Not in cache, request it from peers
     try:
         request.app['busy'] = True # Halts the precaching process
-        respjson = await work_generate(requestjson['hash'], request.app['redis'])
+        respjson = await work_generate(requestjson['hash'], request.app)
         if respjson is None:
             request.app['busy'] = False
-            return web.HTTPError(reason="Couldn't generate work")
+            return web.HTTPInternalServerError(reason="Couldn't generate work")
         request.app['busy'] = False
         return web.json_response(respjson)
     except Exception as e:
         request.app['busy'] = False
-        log.server_logger.error(e)
-        return web.HTTPServerError()
+        log.server_logger.exception(e)
+        return web.HTTPInternalServerError(reason=str(sys.exc_info()))
 
 async def callback(request):
     requestjson = await request.json()
@@ -128,7 +150,7 @@ async def callback(request):
     log.server_logger.debug(f"callback received {hash}")
     # Forward callback
     for c in CALLBACK_FORWARDS:
-        await asyncio.ensure_future(json_get(c, requestjson))
+        await asyncio.ensure_future(json_post(c, requestjson))
     # Precache POW if necessary
     if not settings.PRECACHE:
         return web.Response(status=200)
@@ -168,11 +190,19 @@ async def get_app():
         await app['precache_task']
 
     if settings.DEBUG:
-        logging.basicConfig(level='DEBUG')
+        logging.basicConfig(level=logging.DEBUG)
     else:
-        logging.basicConfig(level='INFO')
+        root = logging.getLogger('aiohttp.server')
+        logging.basicConfig(level=logging.INFO)
+        handler = WatchedFileHandler(settings.LOG_FILE)
+        formatter = logging.Formatter("%(asctime)s;%(levelname)s;%(message)s", "%Y-%m-%d %H:%M:%S %z")
+        handler.setFormatter(formatter)
+        root.addHandler(handler)
+        root.addHandler(TimedRotatingFileHandler(settings.LOG_FILE, when="d", interval=1, backupCount=100))  
     app = web.Application()
     app['busy'] = False
+    app['failover'] = False
+    app['failover_dt'] = None
     app.add_routes([web.post('/', rpc)])
     app.add_routes([web.post('/callback', callback)])
     app.on_startup.append(open_redis)
