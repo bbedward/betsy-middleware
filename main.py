@@ -32,11 +32,14 @@ PRECACHE_Q_KEY = 'betsy_pcache_q'
 
 ### PEER-related functions
 
-async def json_post(url, request, timeout=settings.TIMEOUT, app=None):
+async def json_post(url, request, timeout=settings.TIMEOUT, app=None, dontcare=False):
     try:
         async with ClientSession() as session:
             async with session.post(url, json=request, timeout=timeout) as resp:
-                return await resp.json(content_type=None)
+                if dontcare:
+                    return resp.status
+                else:
+                    return await resp.json(content_type=None)
     except Exception as e:
         log.server_logger.exception(e)
         if app is not None:
@@ -150,7 +153,7 @@ async def callback(request):
     log.server_logger.debug(f"callback received {hash}")
     # Forward callback
     for c in CALLBACK_FORWARDS:
-        await asyncio.ensure_future(json_post(c, requestjson))
+        await asyncio.ensure_future(json_post(c, requestjson, dontcare=True))
     # Precache POW if necessary
     if not settings.PRECACHE:
         return web.Response(status=200)
