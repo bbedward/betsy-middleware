@@ -14,6 +14,8 @@ import uvloop
 import sys
 import os
 
+from dpow_wsclient import DPOWClient
+
 uvloop.install()
 
 # Configuration arguments
@@ -212,6 +214,13 @@ async def get_app():
         app['redis'] = await aioredis.create_redis(('localhost', 6379),
                                                 db=1, encoding='utf-8')
 
+    async def init_dpow(app):
+        if DPOW_ENABLED:
+            app['dpow'] = DPOWClient(DPOW_WS_URL, DPOW_USER, DPOW_KEY, app)
+            app['dpow'].open_connection()
+        else:
+            app['dpow'] = None
+
     async def init_queue(app):
         """Initialize task queue"""
         app['precache_task'] = app.loop.create_task(precache_queue_process(app))
@@ -238,6 +247,7 @@ async def get_app():
     app.add_routes([web.post('/callback', callback)])
     app.on_startup.append(open_redis)
     app.on_startup.append(init_queue)
+    app.on_startup.append(init_dpow)
     app.on_cleanup.append(clear_queue)
     app.on_shutdown.append(close_redis)
 

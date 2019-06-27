@@ -2,29 +2,36 @@ import asyncio
 import os
 import json
 
-import aiohttp
+from aiohttp import log, ClientSession, WSMsgType, WSMessage, web
 
 class DPOWClient():
-    def __init__(self, dpow_url : str, user : str, key : str, debug : bool = False):
+    def __init__(self, dpow_url : str, user : str, key : str, app : web.Application):
         self.dpow_url = dpow_url
-        self.debug = debug
         self.user = user
         self.key = key
         self.id = 0
+        self.app = app
         self.ws = None # None when socket is closed
 
     async def open_connection(self):
         """Create the websocket connection to dPOW service"""
-        session = aiohttp.ClientSession()
+        session = ClientSession()
         async with session.ws_connect(self.dpow_url) as ws:
             self.ws = ws
             async for msg in ws:
-                if self.debug:
-                    print(f'Message received {msg}')
-                # Handle dPow message TODO
-                if msg.type in (aiohttp.WSMsgType.CLOSED,
-                                aiohttp.WSMsgType.ERROR):
-                    self.ws = None
+                if msg.type == WSMsgType.TEXT:
+                    if msg.data == 'close':
+                        await ws.close()
+                    else:
+                        # Handle Reply
+                        log.server_logger.debug(f'WS Message Received {msg.data}')
+                        msg_json = json.loads(msg.data)
+                        await self.app['redis'].lpush(f'dpow_{msg_json["id"]}', msg.data)
+                elif msg.type == WSMsgType.CLOSE:
+                    log.server_logger.info('WS Connection closed normally')
+                    break
+                elif msg.type == WSMsgType.ERROR:
+                    log.server_logger.info('WS Connection closed with error %s', ws.exception())
                     break
 
     async def request_work(self, hash: str) -> int:
