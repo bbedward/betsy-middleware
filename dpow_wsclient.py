@@ -26,7 +26,7 @@ class DPOWClient():
                         # Handle Reply
                         log.server_logger.debug(f'WS Message Received {msg.data}')
                         msg_json = json.loads(msg.data)
-                        await self.app['redis'].lpush(f'dpow_{msg_json["id"]}', msg.data)
+                        await self.app['redis'].lpush(f'dpow_{msg_json["id"]}', msg.data, expire=60)
                 elif msg.type == WSMsgType.CLOSE:
                     log.server_logger.info('WS Connection closed normally')
                     break
@@ -34,7 +34,12 @@ class DPOWClient():
                     log.server_logger.info('WS Connection closed with error %s', ws.exception())
                     break
 
-    async def request_work(self, hash: str) -> int:
+    async def get_id(self) -> int:
+        """Get ID that should be used for this request"""
+        self.id += 1
+        return self.id
+
+    async def request_work(self, hash: str, id: int):
         """Request work, return ID of the request"""
         if self.ws is None:
             raise Exception(f"Connection to {self.dpow_url} closed")
@@ -42,8 +47,6 @@ class DPOWClient():
             "user": self.user,
             "api_key": self.key,
             "hash": hash,
-            "id": self.id
+            "id": id
         }
         self.ws.send_str(json.dumps(req))
-        self.id += 1
-        return self.id
