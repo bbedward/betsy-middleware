@@ -1,3 +1,8 @@
+#!/usr/bin/env python
+from dotenv import load_dotenv
+load_dotenv()
+
+import argparse
 import asyncio
 import logging
 import json
@@ -7,32 +12,62 @@ from aiohttp import ClientSession, log, web
 from logging.handlers import TimedRotatingFileHandler, WatchedFileHandler
 import uvloop
 import sys
-
-import settings
+import os
 
 uvloop.install()
 
+# Configuration arguments
+
+parser = argparse.ArgumentParser(description="Betsy Work Distributer, Callback Forwarder, Work Precacher (NANO/BANANO)")
+parser.add_argument('--node-url', type=str, help='Node RPC Connection String', default='[::1]:7072')
+parser.add_argument('--log-file', type=str, help='Log file location', default='/tmp/betsy.log')
+parser.add_argument('--work-urls', type=list, nargs='*', help='Work servers to send work too (NOT for dPOW')
+parser.add_argument('--callbacks', type=list, nargs='*', help='Endpoints to forward node callbacks to')
+parser.add_argument('--dpow-url', type=str, help='dPOW HTTP URL', default='https://dpow.nanocenter.org/service/')
+parser.add_argument('--dpow-ws-url', type=str, help='dPOW Web Socket URL', default='wss://dpow.nanocenter.org/service_ws/')
+parser.add_argument('--precache', action='store_true', help='Enables work precaching if specified (does not apply to dPOW)', default=False)
+parser.add_argument('--debug', action='stpre_true', help='Runs in debug mode if specified', default=False)
+options = parser.parse_args()
+
 # Callback forwarding
-CALLBACK_FORWARDS = []
-try:
-	CALLBACK_FORWARDS=settings.CALLBACK_FORWARD
-except Exception:
-	pass
+CALLBACK_FORWARDS = options.callbacks
 
-# Node configuration
-NODE_URL = None
-NODE_PORT = None
-try:
-    NODE_URL=settings.NODE_URL
-    NODE_PORT=settings.NODE_PORT
-except Exception:
-    pass
+# Work URLs
+WORK_URLS = options.work_urls
 
+# Precache
+PRECACHE = options.precache
+
+# Log
+LOG_FILE = options.log_file
+
+# Node URL
+NODE_CONNSTR = options.node_url
+NODE_FALLBACK = False
+if NODE_CONNSTR is not None:
+    try:
+        NODE_URL = options.node_url.split(':')[0]
+        NODE_PORT = options.node_url.split(':')[1]
+        NODE_FALLBACK = True
+    except Exception:
+        print(f"Invalid node connection string, should be url:port, not {NODE_CONNSTR}")
+        parser.print_help()
+        sys.exit(1)
+
+DPOW_URL = options.dpow_url
+DPOW_WS_URL = options.dpow_ws_url
+DPOW_USER = os.getenv('DPOW_USER', None)
+DPOW_KEY = os.getenv('DPOW_KEY', None)
+DPOW_ENABLED = DPOW_USER is not None and DPOW_KEY is not None
+
+DEBUG = options.debug
+
+# Constants
 PRECACHE_Q_KEY = 'betsy_pcache_q'
 
 ### PEER-related functions
 
-async def json_post(url, request, timeout=settings.TIMEOUT, app=None, dontcare=False):
+async def json_post(url, request, timeout=10, app=None, dontcare=False):
     try:
         async with ClientSession() as session:
             async with session.post(url, json=request, timeout=timeout) as resp:
@@ -52,9 +87,8 @@ async def work_cancel(hash):
     """RPC work_cancel"""
     request = {"action":"work_cancel", "hash":hash}
     tasks = []
-    for p in settings.WORK_SERVERS:
-        if '?key' not in p: # dPOW doesn't support work_cancel
-            tasks.append(json_post(p, request))
+    for p in WORK_URLS:
+        tasks.append(json_post(p, request))
     # Don't care about waiting for any responses on work_cancel
     for t in tasks:
         asyncio.ensure_future(t)
@@ -64,23 +98,17 @@ async def work_generate(hash, app):
     redis = app['redis']
     request = {"action":"work_generate", "hash":hash}
     tasks = []
-    for p in settings.WORK_SERVERS:
-        split_p = p.split('?key=')
-        if len(split_p) > 1:
-            request['key'] = split_p[1]
-        else:
-            if 'key' in request:
-                del request['key']
-        tasks.append(json_post(split_p[0], request, app=app))
+    for p in WORK_URLS:
+        tasks.append(json_post(p, request, app=app))
 
-    if settings.NODE_FALLBACK and app['failover'] and NODE_URL and NODE_PORT:
+    if NODE_FALLBACK and app['failover']:
         # Failover to the node since we have some requests that are failing
         # If its been an hour since a work request failed, disable failover mode
         if app['failover_dt'] is not None and (datetime.datetime.utcnow() - app['failover_dt']).total_seconds() > 3600:
             app['failover'] = False
             app['failover_dt'] = None
         else:
-            tasks.append(json_post(f"http://{NODE_URL}:{NODE_PORT}", request, timeout=30))
+            tasks.append(json_post(f"http://{NODE_CONNSTR}", request, timeout=30))
 
     while len(tasks):
         done, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
@@ -92,13 +120,13 @@ async def work_generate(hash, app):
                 return task.result()
 
     # Fallback method
-    if settings.NODE_FALLBACK and NODE_URL and NODE_PORT:
-        return await json_post(f"http://{NODE_URL}:{NODE_PORT}", request, timeout=30)
+    if NODE_FALLBACK:
+        return await json_post(f"http://{NODE_CONNSTR}", request, timeout=30)
 
     return None
 
 async def precache_queue_process(app):
-    while True and settings.PRECACHE:
+    while True and PRECACHE:
         if app['busy']:
             # Wait and try precache again later
             await asyncio.sleep(5)
@@ -155,7 +183,7 @@ async def callback(request):
     for c in CALLBACK_FORWARDS:
         await asyncio.ensure_future(json_post(c, requestjson, dontcare=True))
     # Precache POW if necessary
-    if not settings.PRECACHE:
+    if not PRECACHE:
         return web.Response(status=200)
     block = json.loads(requestjson['block'])
     if 'previous' not in block:
@@ -192,16 +220,16 @@ async def get_app():
         app['precache_task'].cancel()
         await app['precache_task']
 
-    if settings.DEBUG:
+    if DEBUG:
         logging.basicConfig(level=logging.DEBUG)
     else:
         root = logging.getLogger('aiohttp.server')
         logging.basicConfig(level=logging.INFO)
-        handler = WatchedFileHandler(settings.LOG_FILE)
+        handler = WatchedFileHandler(LOG_FILE)
         formatter = logging.Formatter("%(asctime)s;%(levelname)s;%(message)s", "%Y-%m-%d %H:%M:%S %z")
         handler.setFormatter(formatter)
         root.addHandler(handler)
-        root.addHandler(TimedRotatingFileHandler(settings.LOG_FILE, when="d", interval=1, backupCount=100))  
+        root.addHandler(TimedRotatingFileHandler(LOG_FILE, when="d", interval=1, backupCount=100))  
     app = web.Application()
     app['busy'] = False
     app['failover'] = False
