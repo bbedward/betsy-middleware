@@ -30,7 +30,7 @@ class DPOWClient():
                         # Handle Reply
                         log.server_logger.debug(f'WS Message Received {msg.data}')
                         msg_json = json.loads(msg.data)
-                        await self.app['redis'].lpush(f'dpow_{msg_json["id"]}', msg.data)
+                        await self.app['redis'].rpush(f'dpow_{msg_json["id"]}', msg.data)
                         await self.app['redis'].expire(f'dpow_{msg_json["id"]}', 60)
                 elif msg.type == WSMsgType.CLOSE:
                     log.server_logger.info('WS Connection closed normally')

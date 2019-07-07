@@ -100,6 +100,12 @@ async def work_cancel(hash):
     for t in tasks:
         asyncio.ensure_future(t)
 
+async def get_work(app, dpow_id : int):
+    msg = None
+    with await app['redis'] as redis:
+        msg = await redis.blpop(f'dpow_{dpow_id}', timeout=30)
+    return msg
+
 async def work_generate(hash, app):
     """RPC work_generate"""
     redis = app['redis']
@@ -114,7 +120,7 @@ async def work_generate(hash, app):
         if success is ConnectionClosed:
             app.loop.create_task(app['dpow'].open_connection())
         else:
-            tasks.append(app['redis'].blpop(f'dpow_{dpow_id}', timeout=30))
+            tasks.append(get_work(app, dpow_id))
 
     if NODE_FALLBACK and app['failover']:
         # Failover to the node since we have some requests that are failing
@@ -130,12 +136,12 @@ async def work_generate(hash, app):
         for task in done:
             try:
                 result = task.result()
-                if result is str:
-                    result = json.loads(result)
+                if isinstance(result, list):
+                    result = json.loads(result[1])
                 if result is not None and 'work' in result:
                     asyncio.ensure_future(work_cancel(hash))
                     await redis.set(hash, result['work'], expire=600000) # Cache work
-                    return task.result()
+                    return result
             except Exception as exc:
                 log.server_logger.exception("Task raised an exception");
     # Fallback method
@@ -228,8 +234,8 @@ async def get_app():
     async def open_redis(app):
         """Open redis connection"""
         log.server_logger.info("Opening redis connection")
-        app['redis'] = await aioredis.create_redis(('localhost', 6379),
-                                                db=1, encoding='utf-8')
+        app['redis'] = await aioredis.create_redis_pool(('localhost', 6379),
+                                                db=1, encoding='utf-8', minsize=2)
 
     async def init_dpow(app):
         if DPOW_ENABLED:
