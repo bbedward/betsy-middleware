@@ -4,6 +4,10 @@ import json
 
 from aiohttp import log, ClientSession, WSMsgType, WSMessage, web
 
+class ConnectionClosed():
+    def __init__(self, reason: str = "unknown"):
+        self.reason = reason
+
 class DPOWClient():
     def __init__(self, dpow_url : str, user : str, key : str, app : web.Application):
         self.dpow_url = dpow_url
@@ -26,7 +30,8 @@ class DPOWClient():
                         # Handle Reply
                         log.server_logger.debug(f'WS Message Received {msg.data}')
                         msg_json = json.loads(msg.data)
-                        await self.app['redis'].lpush(f'dpow_{msg_json["id"]}', msg.data, expire=60)
+                        await self.app['redis'].lpush(f'dpow_{msg_json["id"]}', msg.data)
+                        await self.app['redis'].expire(f'dpow_{msg_json["id"]}', 60)
                 elif msg.type == WSMsgType.CLOSE:
                     log.server_logger.info('WS Connection closed normally')
                     break
@@ -42,11 +47,11 @@ class DPOWClient():
     async def request_work(self, hash: str, id: int):
         """Request work, return ID of the request"""
         if self.ws is None:
-            raise Exception(f"Connection to {self.dpow_url} closed")
+            return ConnectionClosed()
         req = {
             "user": self.user,
             "api_key": self.key,
             "hash": hash,
             "id": id
         }
-        self.ws.send_str(json.dumps(req))
+        await self.ws.send_str(json.dumps(req))
