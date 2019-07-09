@@ -1,46 +1,72 @@
-# NANO/BANANO Work/Callback Middleware (Betsy)
+# NANO/BANANO Work/Callback/Distributed POW Middleware (Betsy) v2.0
 
 ## What is Betsy?
 
 Middleware for banano/nano applications and nodes.
 
-## Features
+## Why would I use this?
 
-- Take a work-peer list, and handle making asynchronous work_generate
-  and work_cancel requests. With an optional fallback option to use the local node in the event of work
-  peer downtime
-- Support for distributed POW, specify the url with a key parameter. e.g. http://1.2.3.4:8000?key=mysecretkey
-- Work caching
-- Work precaching (requires callback)
-- Callback forwarding (forward the node callback to any other number of services)
+Here's some of the possible use cases
 
-## Configuration
+- You want to use distributed pow v3, but you don't want to change any application code.
+- You want to use distributed pow v3, but you also want to use other work peers at the same time
+- You want to precache work for accounts without using distributed pow
+- You want to forward the nano/banano node callback to multiple services
+- You want to use any combination of distributed pow and work peers, but you don't want things to collapse when they are unavailable
 
-1.) Copy settings example
+## Setup and Dependencies
 
-`cp settings.py.example settings.py`
-
-2.) Setup work peer list - if you want to call the work_generate API, ex.
+Betsy requires python 3.6 or newer. Recommended operation is to use a virtualenv for all of the project dependencies.
 
 ```
-WORK_SERVERS=['https://1.2.3.4:5000', 'https://5.6.7.8:5001?key=123456', 'http://[::1]:7076']
+# git clone https://github.com/bbedward/betsy-middleware.git
+# cd betsy-middleware
+# virtualenv -p python3.6 venv
+# ./venv/bin/pip install -r requirements.txt
 ```
 
-3.) Setup local node configuration if you want to use local node as the backup work peer option
+## Usage
+
+You can run `./venv/bin/python main.py --help` for all options.
+
+Betsy is configured using arguments.
+
+| Argument     | Description                                                                                         |
+|-------------|---------------------------------------------------------------------------------------------------------------------------------------------|
+| --host      | Host for betsy to listen on (default: `127.0.0.1`)                                                                                          |
+| --port      | Port for betsy to listen on (default: `5555`)                                                                                               |
+| --node-url  | URL of the local node for work_generate fallback If not specified, then will disable local node fallback. (optional, example: `[::1]:7072`) |
+| --log-file  | Where betsy will output logging data to (default: `/tmp/betsy.log`)                                                                         |
+| --work-urls | Work peer list, separated by spaces (NOT distributed pow) (optional, example: 'http://peer.com/api http://peer2.com/api`                    |
+| --callbacks | APIs to forward the node callback to (optional, example: 'http://myapi.cc/api http://myapi2.cc/api`                                         |
+| --precache  | Enable work precaching for work peers, besides dPow.                                                                                        |
+| --debug     | Enable debug mode (more verbose logging)                                                                                                    |
+
+If I wanted to:
+- Run on port 4545
+- Enable work fallback to my nano node which has RPC on `[::1]:7076`
+- Use the work peers `https://workpeerone.com` and `123.45.67.89:7176`
+- Forward callbacks to `127.0.0.1:6000/callback`
+- And enable work precaching
+
+I would use the arguments as:
+
+`main.py --port 4545 --node-url [::1]:7076 --work-urls https://workpeerone.com 123.45.67.89:7176 --callbacks 127.0.0.1:6000/callback --precache`
+
+## Setting up with distributed pow v3
+
+You can get most of the benefits of the fancy dPow v3 websocket service without changing you application code. All you need to do is set the two environment variables:
 
 ```
-NODE_URL='[::1]'
-NODE_PORT=7076
-NODE_FALLBACK=True
+DPOW_USER=bbedward
+DPOW_KEY=123456
 ```
 
-4.) Setup callback forwarding, if you want
+If you put these in a file called `.env`, in the same folder as the main program - these will get loaded automatically and dpow will be enabled as a work peer.
 
-```
-CALLBACK_FORWARD=['http://127.0.0.1:5001']
-```
+## Setting the node callback to point to betsy
 
-This requires you to setup the callback in node config as follows:
+If you want to use precaching or callback forwarding, betsy needs to receive callbacks. You can do this by editing the NanoData/config.json file as follows:
 
 ```
 "callback_address": "127.0.0.1",
@@ -48,30 +74,22 @@ This requires you to setup the callback in node config as follows:
 "callback_target": "/callback",
 ```
 
-5) For work, you can use this as a standard work peer, in node config:
+`callback_address` and `callback_port` are the same as the `--host` and `--port` options you choose when you run betsy.
 
-```
-work_peers: [
-  "::ffff:127.0.0.1:5555"
-]
-```
+## Getting work from Betsy
 
-Or you can post work_generate requests directly
+Betsy does all the complicated stuff behind the scenes, all you need to do is post a standard `work_generate` request.
 
 ```
 curl -g -d '{"action":"work_generate", "hash":"ECCB8CB65CD3106EDA8CE9AA893FEAD497A91BCA903890CBD7A5C59F06AB9113"}' '127.0.0.1:5555'
 ```
 
-## Setup
-
-1.) Install python 3.6+
-
-2.) Install requirements
+You can also use betsy as a work_peer in the NanoData/config.json
 
 ```
-cd betsy-middleware
-virtualenv -p python3.6 venv
-./venv/bin/pip install -r requirements.txt
+work_peers: [
+  "::ffff:127.0.0.1:5555"
+]
 ```
 
 ## Running as systemd service
@@ -80,23 +98,21 @@ virtualenv -p python3.6 venv
 
 ```
 [Unit]
-Description=Betsy - Gunicorn Worker
+Description=Betsy - Nano Middleware
 After=network.target
 
 [Service]
 PIDFile=/tmp/betsy.pid
 User=<your_user>
 WorkingDirectory=/path/to/betsy
-ExecStart=/path/to/betsy/venv/bin/gunicorn main:work_app --pid /tmp/betsy.pid   \
-          --bind 127.0.0.1:5555 -w 1 --worker-class aiohttp.worker.GunicornWebWorker --error-log=/tmp/betsy.log 
+EnvironmentFile=/path/to/betsy/.env
+ExecStart=/path/to/betsy/venv/bin/python main.py --host 127.0.0.1 --port 5555 --work-urls 123.45.67.89:6000/work --callbacks 123.45.67.89/callback --precache
 ExecReload=/bin/kill -s HUP $MAINPID
 ExecStop=/bin/kill -s TERM $MAINPID
 
 [Install]
 WantedBy=multi-user.target
 ```
-
-Change bind address, port to whatever you want. If you want multiple gunicorn worker processes then increase the `-w` paramter
 
 2.) Enable and start
 

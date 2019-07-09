@@ -106,7 +106,7 @@ async def get_work(app, dpow_id : int):
         msg = await redis.blpop(f'dpow_{dpow_id}', timeout=30)
     return msg
 
-async def work_generate(hash, app):
+async def work_generate(hash, app, precache=False):
     """RPC work_generate"""
     redis = app['redis']
     request = {"action":"work_generate", "hash":hash}
@@ -114,7 +114,7 @@ async def work_generate(hash, app):
     dpow_id = -1
     for p in WORK_URLS:
         tasks.append(json_post(p, request, app=app))
-    if DPOW_ENABLED:
+    if DPOW_ENABLED and not precache:
         dpow_id = await app['dpow'].get_id()
         try:
             success = await app['dpow'].request_work(hash, dpow_id)
@@ -173,7 +173,7 @@ async def precache_queue_process(app):
         if have_pow is not None:
             continue # Already cached
         log.server_logger.info(f"precaching {hash}")
-        await work_generate(hash, app)
+        await work_generate(hash, app, precache=True)
 
 ### END PEER-related functions
 

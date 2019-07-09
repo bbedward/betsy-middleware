@@ -1,5 +1,4 @@
 aiohttp
-gunicorn
 aioredis
 uvloop
 python-dotenv
