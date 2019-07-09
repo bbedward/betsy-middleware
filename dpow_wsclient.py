@@ -4,9 +4,8 @@ import json
 
 from aiohttp import log, ClientSession, WSMsgType, WSMessage, web
 
-class ConnectionClosed():
-    def __init__(self, reason: str = "unknown"):
-        self.reason = reason
+class ConnectionClosed(Exception):
+    pass
 
 class DPOWClient():
     def __init__(self, dpow_url : str, user : str, key : str, app : web.Application):
@@ -47,7 +46,7 @@ class DPOWClient():
     async def request_work(self, hash: str, id: int):
         """Request work, return ID of the request"""
         if self.ws is None:
-            return ConnectionClosed()
+            raise ConnectionClosed()
         req = {
             "user": self.user,
             "api_key": self.key,

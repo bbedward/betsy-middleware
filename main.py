@@ -116,11 +116,11 @@ async def work_generate(hash, app):
         tasks.append(json_post(p, request, app=app))
     if DPOW_ENABLED:
         dpow_id = await app['dpow'].get_id()
-        success = await app['dpow'].request_work(hash, dpow_id)
-        if success is ConnectionClosed:
-            app.loop.create_task(app['dpow'].open_connection())
-        else:
+        try:
+            success = await app['dpow'].request_work(hash, dpow_id)
             tasks.append(get_work(app, dpow_id))
+        except ConnectionClosed:
+            app.loop.create_task(app['dpow'].open_connection())
 
     if NODE_FALLBACK and app['failover']:
         # Failover to the node since we have some requests that are failing
@@ -138,12 +138,18 @@ async def work_generate(hash, app):
                 result = task.result()
                 if isinstance(result, list):
                     result = json.loads(result[1])
-                if result is not None and 'work' in result:
+                elif result is None:
+                    log.server_logger.info("task returned None")
+                    continue
+                if 'work' in result:
                     asyncio.ensure_future(work_cancel(hash))
                     await redis.set(hash, result['work'], expire=600000) # Cache work
                     return result
+                elif 'error' in result:
+                    log.server_logger.info(f'task returned error {result["error"]}')
             except Exception as exc:
-                log.server_logger.exception("Task raised an exception");
+                log.server_logger.exception("Task raised an exception")
+                result.cancel()
     # Fallback method
     if NODE_FALLBACK:
         return await json_post(f"http://{NODE_CONNSTR}", request, timeout=30)
@@ -235,7 +241,7 @@ async def get_app():
         """Open redis connection"""
         log.server_logger.info("Opening redis connection")
         app['redis'] = await aioredis.create_redis_pool(('localhost', 6379),
-                                                db=1, encoding='utf-8', minsize=2)
+                                                db=1, encoding='utf-8', minsize=2, maxsize=50)
 
     async def init_dpow(app):
         if DPOW_ENABLED:
