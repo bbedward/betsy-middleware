@@ -46,13 +46,14 @@ PRECACHE = options.precache
 # Log
 LOG_FILE = options.log_file
 
+LISTEN_HOST = str(ipaddress.ip_address(options.host))
+LISTEN_PORT = int(options.port)
+
 # Node URL
 NODE_CONNSTR = options.node_url
 NODE_FALLBACK = False
 if NODE_CONNSTR is not None:
     try:
-        LISTEN_HOST = str(ipaddress.ip_address(options.host))
-        LISTEN_PORT = int(options.port)
         NODE_URL = options.node_url.split(':')[0]
         NODE_PORT = options.node_url.split(':')[1]
         NODE_FALLBACK = True
