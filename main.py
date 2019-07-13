@@ -26,8 +26,8 @@ parser.add_argument('--host', type=str, help='Host for betsy to listen on', defa
 parser.add_argument('--port', type=int, help='Port for betsy to listen on', default='5555')
 parser.add_argument('--node-url', type=str, help='Node RPC Connection String')
 parser.add_argument('--log-file', type=str, help='Log file location', default='/tmp/betsy.log')
-parser.add_argument('--work-urls', type=list, nargs='*', help='Work servers to send work too (NOT for dPOW')
-parser.add_argument('--callbacks', type=list, nargs='*', help='Endpoints to forward node callbacks to')
+parser.add_argument('--work-urls', nargs='*', help='Work servers to send work too (NOT for dPOW')
+parser.add_argument('--callbacks',nargs='*', help='Endpoints to forward node callbacks to')
 parser.add_argument('--dpow-url', type=str, help='dPOW HTTP URL', default='https://dpow.nanocenter.org/service/')
 parser.add_argument('--dpow-ws-url', type=str, help='dPOW Web Socket URL', default='wss://dpow.nanocenter.org/service_ws/')
 parser.add_argument('--precache', action='store_true', help='Enables work precaching if specified (does not apply to dPOW)', default=False)
@@ -96,7 +96,7 @@ async def work_cancel(hash):
     request = {"action":"work_cancel", "hash":hash}
     tasks = []
     for p in WORK_URLS:
-        tasks.append(json_post(p, request))
+        tasks.append(json_post(str(p), request))
     # Don't care about waiting for any responses on work_cancel
     for t in tasks:
         asyncio.ensure_future(t)
