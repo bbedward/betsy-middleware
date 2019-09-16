@@ -45,12 +45,15 @@ class DPOWClient():
 
     async def request_work(self, hash: str, id: int):
         """Request work, return ID of the request"""
-        if self.ws is None:
+        try:
+            if self.ws is None:
+                raise ConnectionClosed()
+            req = {
+                "user": self.user,
+                "api_key": self.key,
+                "hash": hash,
+                "id": id
+            }
+            await self.ws.send_str(json.dumps(req))
+        except Exception:
             raise ConnectionClosed()
-        req = {
-            "user": self.user,
-            "api_key": self.key,
-            "hash": hash,
-            "id": id
-        }
-        await self.ws.send_str(json.dumps(req))
