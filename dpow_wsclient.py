@@ -8,13 +8,16 @@ class ConnectionClosed(Exception):
     pass
 
 class DPOWClient():
-    def __init__(self, dpow_url : str, user : str, key : str, app : web.Application):
+    NANO_DIFFICULTY_CONST = 'fffffc0000000000'
+
+    def __init__(self, dpow_url : str, user : str, key : str, app : web.Application, force_nano_difficulty: bool = False):
         self.dpow_url = dpow_url
         self.user = user
         self.key = key
         self.id = 0
         self.app = app
         self.ws = None # None when socket is closed
+        self.difficulty = DPOWClient.NANO_DIFFICULTY_CONST if force_nano_difficulty else None
 
     async def open_connection(self):
         """Create the websocket connection to dPOW service"""
@@ -54,6 +57,8 @@ class DPOWClient():
                 "hash": hash,
                 "id": id
             }
+            if self.difficulty is not None:
+                req['difficulty'] = self.difficulty
             await self.ws.send_str(json.dumps(req))
         except Exception:
             raise ConnectionClosed()

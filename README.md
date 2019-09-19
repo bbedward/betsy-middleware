@@ -64,6 +64,21 @@ DPOW_KEY=123456
 
 If you put these in a file called `.env`, in the same folder as the main program - these will get loaded automatically and dpow will be enabled as a work peer.
 
+## Setting up with BANANO Distributed PoW (BdPoW)
+
+You can use betsy with the BANANO Distributed pow service as well. You just need to create environment variables to do so.
+
+```
+BDPOW_USER=kalium
+BDPOW_KEY=124567
+```
+
+Just add these with your credentials to a file called `.env`
+
+**If you intend to use BdPoW with a NANO service!**
+
+You need to also start betsy with the option `--bdpow-nano-difficulty`
+
 ## Setting the node callback to point to betsy
 
 If you want to use precaching or callback forwarding, betsy needs to receive callbacks. You can do this by editing the NanoData/config.json file as follows:
