@@ -38,7 +38,7 @@ parser.add_argument('--debug', action='store_true', help='Runs in debug mode if 
 options = parser.parse_args()
 
 # Callback forwarding
-CALLBACK_FORWARDS = options.callbacks
+CALLBACK_FORWARDS = options.callbacks if options.callbacks is not None else []
 
 # Work URLs
 WORK_URLS = options.work_urls if options.work_urls is not None else []
