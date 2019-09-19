@@ -49,7 +49,7 @@ class DPOWClient():
     async def request_work(self, hash: str, id: int):
         """Request work, return ID of the request"""
         try:
-            if self.ws is None:
+            if self.ws is None or self.ws.closed:
                 raise ConnectionClosed()
             req = {
                 "user": self.user,
