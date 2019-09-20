@@ -137,9 +137,9 @@ async def work_generate(hash, app, precache=False):
     redis = app['redis']
     request = {"action":"work_generate", "hash":hash}
     tasks = []
-    dpow_id = -1
     for p in WORK_URLS:
-        tasks.append(json_post(p, request, app=app))
+        tasks.append(json_post(p, request, app=app))                                
+    dpow_id = -1
     if DPOW_ENABLED and not precache:
         dpow_id = await app['dpow'].get_id()
         try:
@@ -148,8 +148,6 @@ async def work_generate(hash, app, precache=False):
         except ConnectionClosed:
             await init_dpow(app)
     bpow_id = -1
-    for p in WORK_URLS:
-        tasks.append(json_post(p, request, app=app))
     if BPOW_ENABLED and not precache:
         bpow_id = await app['bpow'].get_id()
         try:
