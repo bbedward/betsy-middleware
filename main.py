@@ -30,10 +30,10 @@ parser.add_argument('--work-urls', nargs='*', help='Work servers to send work to
 parser.add_argument('--callbacks',nargs='*', help='Endpoints to forward node callbacks to')
 parser.add_argument('--dpow-url', type=str, help='dPOW HTTP URL', default='https://dpow.nanocenter.org/service/')
 parser.add_argument('--dpow-ws-url', type=str, help='dPOW Web Socket URL', default='wss://dpow.nanocenter.org/service_ws/')
-parser.add_argument('--bdpow-url', type=str, help='BANANO BdPoW HTTP URL', default='https://dpow.banano.cc/service/')
-parser.add_argument('--bdpow-ws-url', type=str, help='BANANO BdPoW Web Socket URL', default='wss://dpow.banano.cc/service_ws/')
-parser.add_argument('--bdpow-nano-difficulty', action='store_true', help='Use NANO difficulty with BdPoW (If using for NANO instead of BANANO)', default=False)
-parser.add_argument('--precache', action='store_true', help='Enables work precaching if specified (does not apply to dPOW)', default=False)
+parser.add_argument('--bpow-url', type=str, help='BoomPow (bPow) HTTP URL', default='https://bpow.banano.cc/service/')
+parser.add_argument('--bpow-ws-url', type=str, help='BoomPow (bPow) Web Socket URL', default='wss://bpow.banano.cc/service_ws/')
+parser.add_argument('--bpow-nano-difficulty', action='store_true', help='Use NANO difficulty with BoomPow (If using for NANO instead of BANANO)', default=False)
+parser.add_argument('--precache', action='store_true', help='Enables work precaching if specified (does not apply to dPOW or bPow)', default=False)
 parser.add_argument('--debug', action='store_true', help='Runs in debug mode if specified', default=False)
 options = parser.parse_args()
 
@@ -71,13 +71,13 @@ DPOW_USER = os.getenv('DPOW_USER', None)
 DPOW_KEY = os.getenv('DPOW_KEY', None)
 DPOW_ENABLED = DPOW_USER is not None and DPOW_KEY is not None
 
-# For Banano BdPoW
-BDPOW_URL = options.bdpow_url
-BDPOW_WS_URL = options.bdpow_ws_url
-BDPOW_USER = os.getenv('BDPOW_USER', None)
-BDPOW_KEY = os.getenv('BDPOW_KEY', None)
-BDPOW_ENABLED = BDPOW_USER is not None and BDPOW_KEY is not None
-BDPOW_FOR_NANO = options.bdpow_nano_difficulty
+# For Banano's BoomPow
+BPOW_URL = options.bpow_url
+BPOW_WS_URL = options.bpow_ws_url
+BPOW_USER = os.getenv('BPOW_USER', None)
+BPOW_KEY = os.getenv('BPOW_KEY', None)
+BPOW_ENABLED = BPOW_USER is not None and BPOW_KEY is not None
+BPOW_FOR_NANO = options.bpow_nano_difficulty
 
 async def init_dpow(app):
     if DPOW_ENABLED:
@@ -86,12 +86,12 @@ async def init_dpow(app):
     else:
         app['dpow'] = None
 
-async def init_bdpow(app):
-    if BDPOW_ENABLED:
-        app['bdpow'] = DPOWClient(BDPOW_WS_URL, BDPOW_USER, BDPOW_KEY, app, force_nano_difficulty=BDPOW_FOR_NANO)
-        app.loop.create_task(app['bdpow'].open_connection())
+async def init_bpow(app):
+    if BPOW_ENABLED:
+        app['bpow'] = DPOWClient(BPOW_WS_URL, BPOW_USER, BPOW_KEY, app, force_nano_difficulty=BPOW_FOR_NANO)
+        app.loop.create_task(app['bpow'].open_connection())
     else:
-        app['bdpow'] = None
+        app['bpow'] = None
 
 DEBUG = options.debug
 
@@ -126,10 +126,10 @@ async def work_cancel(hash):
     for t in tasks:
         asyncio.ensure_future(t)
 
-async def get_work(app, dpow_id : int, bdpow : bool = False):
+async def get_work(app, dpow_id : int, bpow : bool = False):
     msg = None
     with await app['redis'] as redis:
-        msg = await redis.blpop(f'{"b" if bdpow else ""}dpow_{dpow_id}', timeout=30)
+        msg = await redis.blpop(f'{"b" if bpow else "d"}pow_{dpow_id}', timeout=30)
     return msg
 
 async def work_generate(hash, app, precache=False):
@@ -147,16 +147,16 @@ async def work_generate(hash, app, precache=False):
             tasks.append(get_work(app, dpow_id))
         except ConnectionClosed:
             await init_dpow(app)
-    bdpow_id = -1
+    bpow_id = -1
     for p in WORK_URLS:
         tasks.append(json_post(p, request, app=app))
-    if BDPOW_ENABLED and not precache:
-        bdpow_id = await app['bdpow'].get_id()
+    if BPOW_ENABLED and not precache:
+        bpow_id = await app['bpow'].get_id()
         try:
-            success = await app['bdpow'].request_work(hash, bdpow_id)
-            tasks.append(get_work(app, bdpow_id))
+            success = await app['bpow'].request_work(hash, bpow_id)
+            tasks.append(get_work(app, bpow_id))
         except ConnectionClosed:
-            await init_bdpow(app)
+            await init_bpow(app)
 
 
     if NODE_FALLBACK and app['failover']:
@@ -307,7 +307,7 @@ async def get_app():
     app.on_startup.append(open_redis)
     app.on_startup.append(init_queue)
     app.on_startup.append(init_dpow)
-    app.on_startup.append(init_bdpow)
+    app.on_startup.append(init_bpow)
     app.on_cleanup.append(clear_queue)
     app.on_shutdown.append(close_redis)
 
