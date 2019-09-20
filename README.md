@@ -117,13 +117,11 @@ Description=Betsy - Nano Middleware
 After=network.target
 
 [Service]
-PIDFile=/tmp/betsy.pid
+Type=simple
 User=<your_user>
 WorkingDirectory=/path/to/betsy
 EnvironmentFile=/path/to/betsy/.env
 ExecStart=/path/to/betsy/venv/bin/python main.py --host 127.0.0.1 --port 5555 --work-urls 123.45.67.89:6000/work --callbacks 123.45.67.89/callback --precache
-ExecReload=/bin/kill -s HUP $MAINPID
-ExecStop=/bin/kill -s TERM $MAINPID
 
 [Install]
 WantedBy=multi-user.target
