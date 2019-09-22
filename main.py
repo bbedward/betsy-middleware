@@ -132,10 +132,12 @@ async def get_work(app, dpow_id : int, bpow : bool = False):
         msg = await redis.blpop(f'{"b" if bpow else "d"}pow_{dpow_id}', timeout=30)
     return msg
 
-async def work_generate(hash, app, precache=False):
+async def work_generate(hash, app, precache=False, difficulty=None):
     """RPC work_generate"""
     redis = app['redis']
     request = {"action":"work_generate", "hash":hash}
+    if difficulty is not None:
+        request['difficulty'] = difficulty
     tasks = []
     for p in WORK_URLS:
         tasks.append(json_post(p, request, app=app))                                
@@ -143,7 +145,7 @@ async def work_generate(hash, app, precache=False):
     if DPOW_ENABLED and not precache:
         dpow_id = await app['dpow'].get_id()
         try:
-            success = await app['dpow'].request_work(hash, dpow_id)
+            success = await app['dpow'].request_work(hash, dpow_id, difficulty=difficulty)
             tasks.append(get_work(app, dpow_id))
         except ConnectionClosed:
             await init_dpow(app)
@@ -151,7 +153,7 @@ async def work_generate(hash, app, precache=False):
     if BPOW_ENABLED and not precache:
         bpow_id = await app['bpow'].get_id()
         try:
-            success = await app['bpow'].request_work(hash, bpow_id)
+            success = await app['bpow'].request_work(hash, bpow_id, difficulty=difficulty)
             tasks.append(get_work(app, bpow_id))
         except ConnectionClosed:
             await init_bpow(app)
@@ -178,7 +180,7 @@ async def work_generate(hash, app, precache=False):
                     continue
                 if 'work' in result:
                     asyncio.ensure_future(work_cancel(hash))
-                    await redis.set(hash, result['work'], expire=600000) # Cache work
+                    await redis.set(f"{hash}:{difficulty}" if difficulty is not None else hash, result['work'], expire=600000) # Cache work
                     return result
                 elif 'error' in result:
                     log.server_logger.info(f'task returned error {result["error"]}')
@@ -222,15 +224,16 @@ async def rpc(request):
     elif 'hash' not in requestjson:
         return web.HTTPBadRequest(reason='Missing hash in request')
 
+    difficulty = requestjson['difficulty'] if 'difficulty' in requestjson else None
     # See if work is in cache
-    work = await request.app['redis'].get(requestjson['hash'])
+    work = await request.app['redis'].get(f"{requestjson['hash']}:{difficulty}" if difficulty is not None else requestjson['hash'])
     if work is not None:
         return web.json_response({"work":work})
 
     # Not in cache, request it from peers
     try:
         request.app['busy'] = True # Halts the precaching process
-        respjson = await work_generate(requestjson['hash'], request.app)
+        respjson = await work_generate(requestjson['hash'], request.app, difficulty=difficulty)
         if respjson is None:
             request.app['busy'] = False
             return web.HTTPInternalServerError(reason="Couldn't generate work")

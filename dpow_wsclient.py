@@ -46,7 +46,7 @@ class DPOWClient():
         self.id += 1
         return self.id
 
-    async def request_work(self, hash: str, id: int):
+    async def request_work(self, hash: str, id: int, difficulty: str = None):
         """Request work, return ID of the request"""
         try:
             if self.ws is None or self.ws.closed:
@@ -57,7 +57,9 @@ class DPOWClient():
                 "hash": hash,
                 "id": id
             }
-            if self.difficulty is not None:
+            if difficulty is not None:
+                req['difficulty'] = difficulty
+            elif self.difficulty is not None:
                 req['difficulty'] = self.difficulty
             await self.ws.send_str(json.dumps(req))
         except Exception:
