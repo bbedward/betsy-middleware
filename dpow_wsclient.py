@@ -8,7 +8,7 @@ class ConnectionClosed(Exception):
     pass
 
 class DPOWClient():
-    NANO_DIFFICULTY_CONST = 'fffffc0000000000'
+    NANO_DIFFICULTY_CONST = 'ffffffc000000000'
 
     def __init__(self, dpow_url : str, user : str, key : str, app : web.Application, force_nano_difficulty: bool = False):
         self.dpow_url = dpow_url
