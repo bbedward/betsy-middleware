@@ -151,7 +151,7 @@ async def work_generate(hash, app, precache=False, difficulty=None):
             await init_dpow(app)
             # HTTP fallback for this request
             dp_req = {
-                "user": DPOW_URL,
+                "user": DPOW_USER,
                 "api_key": DPOW_KEY,
                 "hash": hash,
             }
@@ -168,7 +168,7 @@ async def work_generate(hash, app, precache=False, difficulty=None):
             await init_bpow(app)
             # HTTP fallback for this request
             dp_req = {
-                "user": BPOW_URL,
+                "user": BPOW_USER,
                 "api_key": BPOW_KEY,
                 "hash": hash,
             }
