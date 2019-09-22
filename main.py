@@ -149,6 +149,15 @@ async def work_generate(hash, app, precache=False, difficulty=None):
             tasks.append(get_work(app, dpow_id))
         except ConnectionClosed:
             await init_dpow(app)
+            # HTTP fallback for this request
+            dp_req = {
+                "user": DPOW_URL,
+                "api_key": DPOW_KEY,
+                "hash": hash,
+            }
+            if difficulty is not None:
+                dp_req['difficulty'] = difficulty
+            tasks.append(json_post(DPOW_URL, dp_req, app=app))
     bpow_id = -1
     if BPOW_ENABLED and not precache:
         bpow_id = await app['bpow'].get_id()
@@ -157,7 +166,17 @@ async def work_generate(hash, app, precache=False, difficulty=None):
             tasks.append(get_work(app, bpow_id))
         except ConnectionClosed:
             await init_bpow(app)
-
+            # HTTP fallback for this request
+            dp_req = {
+                "user": BPOW_URL,
+                "api_key": BPOW_KEY,
+                "hash": hash,
+            }
+            if difficulty is not None:
+                dp_req['difficulty'] = difficulty
+            elif BPOW_FOR_NANO:
+                dp_req['difficulty'] = DPOWClient.NANO_DIFFICULTY_CONST
+            tasks.append(json_post(BPOW_URL, dp_req, app=app))
 
     if NODE_FALLBACK and app['failover']:
         # Failover to the node since we have some requests that are failing
