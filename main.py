@@ -88,7 +88,7 @@ async def init_dpow(app):
 
 async def init_bpow(app):
     if BPOW_ENABLED:
-        app['bpow'] = DPOWClient(BPOW_WS_URL, BPOW_USER, BPOW_KEY, app, force_nano_difficulty=BPOW_FOR_NANO)
+        app['bpow'] = DPOWClient(BPOW_WS_URL, BPOW_USER, BPOW_KEY, app, force_nano_difficulty=BPOW_FOR_NANO, bpow=True)
         app.loop.create_task(app['bpow'].open_connection())
     else:
         app['bpow'] = None
@@ -163,7 +163,7 @@ async def work_generate(hash, app, precache=False, difficulty=None):
         bpow_id = await app['bpow'].get_id()
         try:
             success = await app['bpow'].request_work(hash, bpow_id, difficulty=difficulty)
-            tasks.append(get_work(app, bpow_id))
+            tasks.append(get_work(app, bpow_id, bpow=True))
         except ConnectionClosed:
             await init_bpow(app)
             # HTTP fallback for this request
