@@ -10,7 +10,7 @@ class ConnectionClosed(Exception):
 class DPOWClient():
     NANO_DIFFICULTY_CONST = 'ffffffc000000000'
 
-    def __init__(self, dpow_url : str, user : str, key : str, app : web.Application, force_nano_difficulty: bool = False, bpow: bool = False):
+    def __init__(self, dpow_url : str, user : str, key : str, app : web.Application, work_futures: dict, force_nano_difficulty: bool = False, bpow: bool = False):
         self.dpow_url = dpow_url
         self.user = user
         self.key = key
@@ -19,6 +19,7 @@ class DPOWClient():
         self.ws = None # None when socket is closed
         self.difficulty = DPOWClient.NANO_DIFFICULTY_CONST if force_nano_difficulty else None
         self.bpow = bpow
+        self.work_futures = work_futures
 
     async def open_connection(self):
         """Create the websocket connection to dPOW service"""
@@ -33,8 +34,12 @@ class DPOWClient():
                             # Handle Reply
                             log.server_logger.debug(f'WS Message Received {msg.data}')
                             msg_json = json.loads(msg.data)
-                            await self.app['redis'].rpush(f'{"b" if self.bpow else "d"}pow_{msg_json["id"]}', msg.data)
-                            await self.app['redis'].expire(f'{"b" if self.bpow else "d"}pow_{msg_json["id"]}', 60)
+                            try:
+                                result = self.work_futures[f'{"b" if self.bpow else "d"}{msg_json["id"]}']
+                                if not result.done():
+                                    result.set_result(json.loads(msg.data))
+                            except KeyError:
+                                pass
                     elif msg.type == WSMsgType.CLOSE:
                         log.server_logger.info('WS Connection closed normally')
                         break

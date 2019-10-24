@@ -79,16 +79,18 @@ BPOW_KEY = os.getenv('BPOW_KEY', None)
 BPOW_ENABLED = BPOW_USER is not None and BPOW_KEY is not None
 BPOW_FOR_NANO = options.bpow_nano_difficulty
 
+work_futures = dict()
+
 async def init_dpow(app):
     if DPOW_ENABLED:
-        app['dpow'] = DPOWClient(DPOW_WS_URL, DPOW_USER, DPOW_KEY, app)
+        app['dpow'] = DPOWClient(DPOW_WS_URL, DPOW_USER, DPOW_KEY, app, work_futures)
         app.loop.create_task(app['dpow'].open_connection())
     else:
         app['dpow'] = None
 
 async def init_bpow(app):
     if BPOW_ENABLED:
-        app['bpow'] = DPOWClient(BPOW_WS_URL, BPOW_USER, BPOW_KEY, app, force_nano_difficulty=BPOW_FOR_NANO, bpow=True)
+        app['bpow'] = DPOWClient(BPOW_WS_URL, BPOW_USER, BPOW_KEY, app, work_futures, force_nano_difficulty=BPOW_FOR_NANO, bpow=True)
         app.loop.create_task(app['bpow'].open_connection())
     else:
         app['bpow'] = None
@@ -126,12 +128,6 @@ async def work_cancel(hash):
     for t in tasks:
         asyncio.ensure_future(t)
 
-async def get_work(app, dpow_id : int, bpow : bool = False):
-    msg = None
-    with await app['redis'] as redis:
-        msg = await redis.blpop(f'{"b" if bpow else "d"}pow_{dpow_id}', timeout=30)
-    return msg
-
 async def work_generate(hash, app, precache=False, difficulty=None):
     """RPC work_generate"""
     redis = app['redis']
@@ -144,9 +140,10 @@ async def work_generate(hash, app, precache=False, difficulty=None):
     dpow_id = -1
     if DPOW_ENABLED and not precache:
         dpow_id = await app['dpow'].get_id()
+        work_futures[f'd{dpow_id}'] = asyncio.get_event_loop().create_future()
         try:
             success = await app['dpow'].request_work(hash, dpow_id, difficulty=difficulty)
-            tasks.append(get_work(app, dpow_id))
+            tasks.append(work_futures[f'd{dpow_id}'])
         except ConnectionClosed:
             await init_dpow(app)
             # HTTP fallback for this request
@@ -161,9 +158,10 @@ async def work_generate(hash, app, precache=False, difficulty=None):
     bpow_id = -1
     if BPOW_ENABLED and not precache:
         bpow_id = await app['bpow'].get_id()
+        work_futures[f'b{bpow_id}'] = asyncio.get_event_loop().create_future()
         try:
             success = await app['bpow'].request_work(hash, bpow_id, difficulty=difficulty)
-            tasks.append(get_work(app, bpow_id, bpow=True))
+            tasks.append(work_futures[f'b{bpow_id}'])
         except ConnectionClosed:
             await init_bpow(app)
             # HTTP fallback for this request
@@ -188,7 +186,7 @@ async def work_generate(hash, app, precache=False, difficulty=None):
             tasks.append(json_post(f"http://{NODE_CONNSTR}", request, timeout=30))
 
     while len(tasks):
-        done, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        done, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED, timeout=30)
         for task in done:
             try:
                 result = task.result()
@@ -199,7 +197,10 @@ async def work_generate(hash, app, precache=False, difficulty=None):
                     continue
                 if 'work' in result:
                     asyncio.ensure_future(work_cancel(hash))
-                    await redis.set(f"{hash}:{difficulty}" if difficulty is not None else hash, result['work'], expire=600000) # Cache work
+                    try:
+                        await redis.set(f"{hash}:{difficulty}" if difficulty is not None else hash, result['work'], expire=600000) # Cache work
+                    except Exception:
+                        pass
                     return result
                 elif 'error' in result:
                     log.server_logger.info(f'task returned error {result["error"]}')
@@ -245,10 +246,12 @@ async def rpc(request):
 
     difficulty = requestjson['difficulty'] if 'difficulty' in requestjson else None
     # See if work is in cache
-    work = await request.app['redis'].get(f"{requestjson['hash']}:{difficulty}" if difficulty is not None else requestjson['hash'])
-    if work is not None:
-        return web.json_response({"work":work})
-
+    try:
+        work = await request.app['redis'].get(f"{requestjson['hash']}:{difficulty}" if difficulty is not None else requestjson['hash'])
+        if work is not None:
+            return web.json_response({"work":work})
+    except Exception:
+        pass
     # Not in cache, request it from peers
     try:
         request.app['busy'] = True # Halts the precaching process
@@ -292,13 +295,20 @@ async def get_app():
     async def close_redis(app):
         """Close redis connection"""
         log.server_logger.info('Closing redis connection')
-        app['redis'].close()
+        try:
+            app['redis'].close()
+        except Exception:
+            pass
 
     async def open_redis(app):
         """Open redis connection"""
         log.server_logger.info("Opening redis connection")
-        app['redis'] = await aioredis.create_redis_pool(('localhost', 6379),
-                                                db=1, encoding='utf-8', minsize=2, maxsize=50)
+        try:
+            app['redis'] = await aioredis.create_redis_pool(('localhost', 6379),
+                                                db=1, encoding='utf-8', minsize=2, maxsize=15)
+        except Exception:
+            app['redis'] = None
+            log.server_logger.warn('WARNING: Could not connect to Redis, work caching and some other features will not work')
 
     async def init_queue(app):
         """Initialize task queue"""
