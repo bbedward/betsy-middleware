@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: betsy-banano
+  namespace: betsy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: betsy-banano
+  template:
+    metadata:
+      labels:
+        app: betsy-banano
+    spec:
+      containers:
+      - name: betsy-banano
+        image: bananocoin/betsy:1.0.3
+        command: ["/bin/bash", "-c"]
+        args: ["python main.py --host 0.0.0.0 --port 5555 --callbacks http://monkeytalks.monkeytalks:5000/callback"]
+        ports:
+        - containerPort: 5555
+          name: api
+        env:
+          - name: REDIS_HOST
+            value: redis-0.redis
+          - name: REDIS_DB
+            value: "0"  
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: betsy-banano
+  namespace: pippin
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5555
+    targetPort: 5555
+    name: api
+  selector:
+    app: betsy-banano

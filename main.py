@@ -25,7 +25,7 @@ parser = argparse.ArgumentParser(description="Betsy Work Distributer, Callback F
 parser.add_argument('--host', type=str, help='Host for betsy to listen on', default='127.0.0.1')
 parser.add_argument('--port', type=int, help='Port for betsy to listen on', default='5555')
 parser.add_argument('--node-url', type=str, help='Node RPC Connection String')
-parser.add_argument('--log-file', type=str, help='Log file location', default='/tmp/betsy.log')
+parser.add_argument('--log-file', type=str, help='Log file location')
 parser.add_argument('--work-urls', nargs='*', help='Work servers to send work too (NOT for dPOW')
 parser.add_argument('--callbacks',nargs='*', help='Endpoints to forward node callbacks to')
 parser.add_argument('--dpow-url', type=str, help='dPOW HTTP URL', default='https://dpow.nanocenter.org/service/')
@@ -304,8 +304,8 @@ async def get_app():
         """Open redis connection"""
         log.server_logger.info("Opening redis connection")
         try:
-            app['redis'] = await aioredis.create_redis_pool(('localhost', 6379),
-                                                db=1, encoding='utf-8', minsize=2, maxsize=15)
+            app['redis'] = await aioredis.create_redis_pool((os.getenv('REDIS_HOST', 'localhost'), 6379),
+                                                db=int(os.getenv('REDIS_DB', '1')), encoding='utf-8', minsize=2, maxsize=15)
         except Exception:
             app['redis'] = None
             log.server_logger.warn('WARNING: Could not connect to Redis, work caching and some other features will not work')
@@ -321,13 +321,16 @@ async def get_app():
     if DEBUG:
         logging.basicConfig(level=logging.DEBUG)
     else:
-        root = logging.getLogger('aiohttp.server')
-        logging.basicConfig(level=logging.INFO)
-        handler = WatchedFileHandler(LOG_FILE)
-        formatter = logging.Formatter("%(asctime)s;%(levelname)s;%(message)s", "%Y-%m-%d %H:%M:%S %z")
-        handler.setFormatter(formatter)
-        root.addHandler(handler)
-        root.addHandler(TimedRotatingFileHandler(LOG_FILE, when="d", interval=1, backupCount=100))  
+        if LOG_FILE is not None:
+            root = logging.getLogger('aiohttp.server')
+            logging.basicConfig(level=logging.INFO)
+            handler = WatchedFileHandler(LOG_FILE)
+            formatter = logging.Formatter("%(asctime)s;%(levelname)s;%(message)s", "%Y-%m-%d %H:%M:%S %z")
+            handler.setFormatter(formatter)
+            root.addHandler(handler)
+            root.addHandler(TimedRotatingFileHandler(LOG_FILE, when="d", interval=1, backupCount=100))
+        else:
+            logging.basicConfig(level=logging.INFO)
     app = web.Application()
     app['busy'] = False
     app['failover'] = False
