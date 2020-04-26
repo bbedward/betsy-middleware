@@ -17,7 +17,7 @@ spec:
       - name: betsy-nano
         image: bananocoin/betsy:1.0.3
         command: ["/bin/bash", "-c"]
-        args: ["python main.py --host 0.0.0.0 --port 5555 --callbacks http://monkeytalks.monkeytalks:5000/callback"]
+        args: ["python main.py --host 0.0.0.0 --port 5555 --callbacks http://graham-nano.graham-nano:11337/callback"]
         ports:
         - containerPort: 5555
           name: api
