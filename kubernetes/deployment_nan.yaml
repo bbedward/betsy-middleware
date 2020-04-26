@@ -17,7 +17,7 @@ spec:
       - name: betsy-nano
         image: bananocoin/betsy:1.0.3
         command: ["/bin/bash", "-c"]
-        args: ["python main.py --host 0.0.0.0 --port 5555 --callbacks http://graham-nano.graham-nano:11337/callback"]
+        args: ["python main.py --host 0.0.0.0 --port 5555 --callbacks http://graham-nano.graham-nano:11337/callback http://graham-banano.graham-nano:11337/callback --bpow-nano-difficulty"]
         ports:
         - containerPort: 5555
           name: api
@@ -26,6 +26,16 @@ spec:
             value: redis-0.redis
           - name: REDIS_DB
             value: "1"  
+          - name: BPOW_USER
+            valueFrom:
+              secretKeyRef:
+                name: betsy
+                key: bpow_user
+          - name: BPOW_KEY
+            valueFrom:
+              secretKeyRef:
+                name: betsy
+                key: bpow_key
 ---
 apiVersion: v1
 kind: Service
