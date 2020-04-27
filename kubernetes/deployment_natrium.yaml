@@ -17,7 +17,7 @@ spec:
       - name: betsy-natrium
         image: bananocoin/betsy:1.0.3
         command: ["/bin/bash", "-c"]
-        args: ["python main.py --host 0.0.0.0 --port 5555 --bpow-nano-difficulty"]
+        args: ["python main.py --host 0.0.0.0 --port 5555 --bpow-nano-difficulty --callbacks http://natrium-server.natrium:5076/callback"]
         ports:
         - containerPort: 5555
           name: api
