@@ -25,7 +25,7 @@ spec:
           - name: REDIS_HOST
             value: redis-0.redis
           - name: REDIS_DB
-            value: "1"  
+            value: "2"  
           - name: BPOW_USER
             valueFrom:
               secretKeyRef:
