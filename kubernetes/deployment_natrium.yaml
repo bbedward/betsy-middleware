@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: betsy-natrium
+  namespace: betsy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: betsy-natrium
+  template:
+    metadata:
+      labels:
+        app: betsy-natrium
+    spec:
+      containers:
+      - name: betsy-natrium
+        image: bananocoin/betsy:1.0.3
+        command: ["/bin/bash", "-c"]
+        args: ["python main.py --host 0.0.0.0 --port 5555 --bpow-nano-difficulty"]
+        ports:
+        - containerPort: 5555
+          name: api
+        env:
+          - name: REDIS_HOST
+            value: redis-0.redis
+          - name: REDIS_DB
+            value: "1"  
+          - name: BPOW_USER
+            valueFrom:
+              secretKeyRef:
+                name: betsy
+                key: bpow_user
+          - name: BPOW_KEY
+            valueFrom:
+              secretKeyRef:
+                name: betsy
+                key: bpow_key
+          - name: DPOW_USER
+            valueFrom:
+              secretKeyRef:
+                name: betsy
+                key: dpow_user
+          - name: DPOW_KEY
+            valueFrom:
+              secretKeyRef:
+                name: betsy
+                key: dpow_key
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: betsy-natrium
+  namespace: betsy
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5555
+    targetPort: 5555
+    name: api
+  selector:
+    app: betsy-natrium
