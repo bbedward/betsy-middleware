@@ -14,6 +14,7 @@ from logging.handlers import TimedRotatingFileHandler, WatchedFileHandler
 import uvloop
 import sys
 import os
+import nanolib
 
 from dpow_wsclient import DPOWClient, ConnectionClosed
 
@@ -249,7 +250,13 @@ async def rpc(request):
     try:
         work = await request.app['redis'].get(f"{requestjson['hash']}:{difficulty}" if difficulty is not None else requestjson['hash'])
         if work is not None:
-            return web.json_response({"work":work})
+            # Validate
+            test_difficulty = difficulty if difficulty is not None else DPOWClient.NANO_DIFFICULTY_CONST if BPOW_FOR_NANO else 'fffffe0000000000'
+            try:
+                nanolib.validate_work(requestjson['hash'], work, difficulty=test_difficulty)
+                return web.json_response({"work":work})
+            except nanolib.InvalidWork:
+                pass
     except Exception:
         pass
     # Not in cache, request it from peers

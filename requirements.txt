@@ -2,3 +2,4 @@ aiohttp
 aioredis
 uvloop
 python-dotenv
+nanolib
