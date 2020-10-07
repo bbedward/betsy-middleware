@@ -129,10 +129,11 @@ async def work_cancel(hash):
     for t in tasks:
         asyncio.ensure_future(t)
 
-async def work_generate(hash, app, precache=False, difficulty=None):
+async def work_generate(hash, app, precache=False, difficulty=None, reward=True):
     """RPC work_generate"""
     redis = app['redis']
     request = {"action":"work_generate", "hash":hash}
+    request['reward'] = reward
     if difficulty is not None:
         request['difficulty'] = difficulty
     tasks = []
@@ -143,7 +144,7 @@ async def work_generate(hash, app, precache=False, difficulty=None):
         dpow_id = await app['dpow'].get_id()
         work_futures[f'd{dpow_id}'] = asyncio.get_event_loop().create_future()
         try:
-            success = await app['dpow'].request_work(hash, dpow_id, difficulty=difficulty)
+            success = await app['dpow'].request_work(hash, dpow_id, difficulty=difficulty, reward=reward)
             tasks.append(work_futures[f'd{dpow_id}'])
         except ConnectionClosed:
             await init_dpow(app)
@@ -152,6 +153,7 @@ async def work_generate(hash, app, precache=False, difficulty=None):
                 "user": DPOW_USER,
                 "api_key": DPOW_KEY,
                 "hash": hash,
+                "reward": reward
             }
             if difficulty is not None:
                 dp_req['difficulty'] = difficulty
@@ -161,7 +163,7 @@ async def work_generate(hash, app, precache=False, difficulty=None):
         bpow_id = await app['bpow'].get_id()
         work_futures[f'b{bpow_id}'] = asyncio.get_event_loop().create_future()
         try:
-            success = await app['bpow'].request_work(hash, bpow_id, difficulty=difficulty)
+            success = await app['bpow'].request_work(hash, bpow_id, difficulty=difficulty, reward=reward)
             tasks.append(work_futures[f'b{bpow_id}'])
         except ConnectionClosed:
             await init_bpow(app)
@@ -170,6 +172,7 @@ async def work_generate(hash, app, precache=False, difficulty=None):
                 "user": BPOW_USER,
                 "api_key": BPOW_KEY,
                 "hash": hash,
+                "reward": reward
             }
             if difficulty is not None:
                 dp_req['difficulty'] = difficulty
@@ -246,6 +249,7 @@ async def rpc(request):
         return web.HTTPBadRequest(reason='Missing hash in request')
 
     difficulty = requestjson['difficulty'] if 'difficulty' in requestjson else None
+    reward = requestjson['reward'] if 'reward' in requestjson else True
     # See if work is in cache
     try:
         work = await request.app['redis'].get(f"{requestjson['hash']}:{difficulty}" if difficulty is not None else requestjson['hash'])
@@ -262,7 +266,7 @@ async def rpc(request):
     # Not in cache, request it from peers
     try:
         request.app['busy'] = True # Halts the precaching process
-        respjson = await work_generate(requestjson['hash'], request.app, difficulty=difficulty)
+        respjson = await work_generate(requestjson['hash'], request.app, difficulty=difficulty, reward=reward)
         if respjson is None:
             request.app['busy'] = False
             return web.HTTPInternalServerError(reason="Couldn't generate work")

@@ -52,7 +52,7 @@ class DPOWClient():
         self.id += 1
         return self.id
 
-    async def request_work(self, hash: str, id: int, difficulty: str = None):
+    async def request_work(self, hash: str, id: int, difficulty: str = None, reward: bool = True):
         """Request work, return ID of the request"""
         try:
             if self.ws is None or self.ws.closed:
@@ -61,7 +61,8 @@ class DPOWClient():
                 "user": self.user,
                 "api_key": self.key,
                 "hash": hash,
-                "id": id
+                "id": id,
+                "reward": reward
             }
             if difficulty is not None:
                 req['difficulty'] = difficulty
