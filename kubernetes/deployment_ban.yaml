@@ -50,3 +50,18 @@ spec:
     name: api
   selector:
     app: betsy-banano
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: betsy-banano-nodeport
+  namespace: betsy
+spec:
+  type: NodePort
+  ports:
+  - name: api
+    port: 5555
+    nodePort: 30756
+    targetPort: 5555
+  selector:
+    app: betsy-banano
