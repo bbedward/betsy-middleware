@@ -26,11 +26,6 @@ spec:
             value: redis-0.redis
           - name: REDIS_DB
             value: "0"  
-          - name: BPOW_USER
-            valueFrom:
-              secretKeyRef:
-                name: betsy
-                key: bpow_user
           - name: BPOW_KEY
             valueFrom:
               secretKeyRef:

@@ -31,18 +31,19 @@ You can run `./venv/bin/python main.py --help` for all options.
 
 Betsy is configured using arguments.
 
-| Argument     | Description                                                                                         |
-|-------------|---------------------------------------------------------------------------------------------------------------------------------------------|
+| Argument    | Description                                                                                                                                 |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | --host      | Host for betsy to listen on (default: `127.0.0.1`)                                                                                          |
 | --port      | Port for betsy to listen on (default: `5555`)                                                                                               |
 | --node-url  | URL of the local node for work_generate fallback If not specified, then will disable local node fallback. (optional, example: `[::1]:7072`) |
 | --log-file  | Where betsy will output logging data to (default: `/tmp/betsy.log`)                                                                         |
 | --work-urls | Work peer list, separated by spaces (NOT distributed pow) (optional, example: 'http://peer.com/api http://peer2.com/api`                    |
 | --callbacks | APIs to forward the node callback to (optional, example: 'http://myapi.cc/api http://myapi2.cc/api`                                         |
-| --precache  | Enable work precaching for work peers, besides dPow.                                                                                        |
+| --precache  | Enable work precaching for work peers, excludes BoomPoW                                                                                     |
 | --debug     | Enable debug mode (more verbose logging)                                                                                                    |
 
 If I wanted to:
+
 - Run on port 4545
 - Enable work fallback to my nano node which has RPC on `[::1]:7076`
 - Use the work peers `https://workpeerone.com` and `123.45.67.89:7176`
@@ -53,27 +54,15 @@ I would use the arguments as:
 
 `main.py --port 4545 --node-url [::1]:7076 --work-urls https://workpeerone.com 123.45.67.89:7176 --callbacks 127.0.0.1:6000/callback --precache`
 
-## Setting up with distributed pow v3
+## Setting up with BoomPow v2 (BPoW)
 
-You can get most of the benefits of the fancy dPow v3 websocket service without changing you application code. All you need to do is set the two environment variables:
-
-```
-DPOW_USER=bbedward
-DPOW_KEY=123456
-```
-
-If you put these in a file called `.env`, in the same folder as the main program - these will get loaded automatically and dpow will be enabled as a work peer.
-
-## Setting up with BoomPow (bPow)
-
-You can use betsy with BANANO's PoW service as well (BoomPow). You just need to create environment variables to do so.
+You can use betsy with BANANO's PoW service as well ([BoomPow](https://github.com/BananoCoin/boompow)). You just need to add the key to the environment.
 
 ```
-BPOW_USER=kalium
 BPOW_KEY=124567
 ```
 
-Just add these with your credentials to a file called `.env`
+You can also add it to a file `.env`
 
 **If you intend to use BoomPow with a NANO service!**
 
