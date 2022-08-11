@@ -16,9 +16,12 @@ import sys
 import os
 import nanolib
 
-from dpow_wsclient import DPOWClient, ConnectionClosed
+from bpow_client import BPOWClient, ConnectionClosed
+from aiographql.client import GraphQLResponse
 
 uvloop.install()
+
+current_loop = asyncio.get_event_loop_policy().get_event_loop()
 
 # Configuration arguments
 
@@ -29,10 +32,7 @@ parser.add_argument('--node-url', type=str, help='Node RPC Connection String')
 parser.add_argument('--log-file', type=str, help='Log file location')
 parser.add_argument('--work-urls', nargs='*', help='Work servers to send work too (NOT for dPOW')
 parser.add_argument('--callbacks',nargs='*', help='Endpoints to forward node callbacks to')
-parser.add_argument('--dpow-url', type=str, help='dPOW HTTP URL', default='https://dpow.nanocenter.org/service/')
-parser.add_argument('--dpow-ws-url', type=str, help='dPOW Web Socket URL', default='wss://dpow.nanocenter.org/service_ws/')
-parser.add_argument('--bpow-url', type=str, help='BoomPow (bPow) HTTP URL', default='https://bpow.banano.cc/service/')
-parser.add_argument('--bpow-ws-url', type=str, help='BoomPow (bPow) Web Socket URL', default='wss://bpow.banano.cc/service_ws/')
+parser.add_argument('--bpow-url', type=str, help='BoomPow (bPow) HTTP URL', default='https://boompow.banano.cc/graphql')
 parser.add_argument('--bpow-nano-difficulty', action='store_true', help='Use NANO difficulty with BoomPow (If using for NANO instead of BANANO)', default=False)
 parser.add_argument('--precache', action='store_true', help='Enables work precaching if specified (does not apply to dPOW or bPow)', default=False)
 parser.add_argument('--debug', action='store_true', help='Runs in debug mode if specified', default=False)
@@ -66,33 +66,17 @@ if NODE_CONNSTR is not None:
         parser.print_help()
         sys.exit(1)
 
-DPOW_URL = options.dpow_url
-DPOW_WS_URL = options.dpow_ws_url
-DPOW_USER = os.getenv('DPOW_USER', None)
-DPOW_KEY = os.getenv('DPOW_KEY', None)
-DPOW_ENABLED = DPOW_USER is not None and DPOW_KEY is not None
-
 # For Banano's BoomPow
 BPOW_URL = options.bpow_url
-BPOW_WS_URL = options.bpow_ws_url
-BPOW_USER = os.getenv('BPOW_USER', None)
 BPOW_KEY = os.getenv('BPOW_KEY', None)
-BPOW_ENABLED = BPOW_USER is not None and BPOW_KEY is not None
+BPOW_ENABLED = BPOW_KEY is not None
 BPOW_FOR_NANO = options.bpow_nano_difficulty
 
 work_futures = dict()
 
-async def init_dpow(app):
-    if DPOW_ENABLED:
-        app['dpow'] = DPOWClient(DPOW_WS_URL, DPOW_USER, DPOW_KEY, app, work_futures)
-        app.loop.create_task(app['dpow'].open_connection())
-    else:
-        app['dpow'] = None
-
 async def init_bpow(app):
     if BPOW_ENABLED:
-        app['bpow'] = DPOWClient(BPOW_WS_URL, BPOW_USER, BPOW_KEY, app, work_futures, force_nano_difficulty=BPOW_FOR_NANO, bpow=True)
-        app.loop.create_task(app['bpow'].open_connection())
+        app['bpow'] = BPOWClient(BPOW_URL,BPOW_KEY, app,force_nano_difficulty=BPOW_FOR_NANO)
     else:
         app['bpow'] = None
 
@@ -139,46 +123,8 @@ async def work_generate(hash, app, precache=False, difficulty=None, reward=True)
     tasks = []
     for p in WORK_URLS:
         tasks.append(json_post(p, request, app=app))                                
-    dpow_id = -1
-    if DPOW_ENABLED and not precache:
-        dpow_id = await app['dpow'].get_id()
-        work_futures[f'd{dpow_id}'] = asyncio.get_event_loop().create_future()
-        try:
-            success = await app['dpow'].request_work(hash, dpow_id, difficulty=difficulty, reward=reward)
-            tasks.append(work_futures[f'd{dpow_id}'])
-        except ConnectionClosed:
-            await init_dpow(app)
-            # HTTP fallback for this request
-            dp_req = {
-                "user": DPOW_USER,
-                "api_key": DPOW_KEY,
-                "hash": hash,
-                "reward": reward
-            }
-            if difficulty is not None:
-                dp_req['difficulty'] = difficulty
-            tasks.append(json_post(DPOW_URL, dp_req, app=app))
-    bpow_id = -1
     if BPOW_ENABLED and not precache:
-        bpow_id = await app['bpow'].get_id()
-        work_futures[f'b{bpow_id}'] = asyncio.get_event_loop().create_future()
-        try:
-            success = await app['bpow'].request_work(hash, bpow_id, difficulty=difficulty, reward=reward)
-            tasks.append(work_futures[f'b{bpow_id}'])
-        except ConnectionClosed:
-            await init_bpow(app)
-            # HTTP fallback for this request
-            dp_req = {
-                "user": BPOW_USER,
-                "api_key": BPOW_KEY,
-                "hash": hash,
-                "reward": reward
-            }
-            if difficulty is not None:
-                dp_req['difficulty'] = difficulty
-            elif BPOW_FOR_NANO:
-                dp_req['difficulty'] = DPOWClient.NANO_DIFFICULTY_CONST
-            tasks.append(json_post(BPOW_URL, dp_req, app=app))
+        tasks.append(app['bpow'].request_work(hash, difficulty))
 
     if NODE_FALLBACK and app['failover']:
         # Failover to the node since we have some requests that are failing
@@ -194,6 +140,11 @@ async def work_generate(hash, app, precache=False, difficulty=None, reward=True)
         for task in done:
             try:
                 result = task.result()
+                if isinstance(result, GraphQLResponse):
+                    if len(result.errors) > 0:
+                        result = None
+                    else:
+                        result = {"work": result.data["workGenerate"]}
                 if isinstance(result, list):
                     result = json.loads(result[1])
                 elif result is None:
@@ -255,7 +206,7 @@ async def rpc(request):
         work = await request.app['redis'].get(f"{requestjson['hash']}:{difficulty}" if difficulty is not None else requestjson['hash'])
         if work is not None:
             # Validate
-            test_difficulty = difficulty if difficulty is not None else DPOWClient.NANO_DIFFICULTY_CONST if BPOW_FOR_NANO else 'fffffe0000000000'
+            test_difficulty = difficulty if difficulty is not None else BPOWClient.NANO_DIFFICULTY_CONST if BPOW_FOR_NANO else 'fffffe0000000000'
             try:
                 nanolib.validate_work(requestjson['hash'], work, difficulty=test_difficulty)
                 return web.json_response({"work":work})
@@ -323,7 +274,7 @@ async def get_app():
 
     async def init_queue(app):
         """Initialize task queue"""
-        app['precache_task'] = app.loop.create_task(precache_queue_process(app))
+        app['precache_task'] = current_loop.create_task(precache_queue_process(app))
 
     async def clear_queue(app):
         app['precache_task'].cancel()
@@ -350,14 +301,13 @@ async def get_app():
     app.add_routes([web.post('/callback', callback)])
     app.on_startup.append(open_redis)
     app.on_startup.append(init_queue)
-    app.on_startup.append(init_dpow)
     app.on_startup.append(init_bpow)
     app.on_cleanup.append(clear_queue)
     app.on_shutdown.append(close_redis)
 
     return app
 
-work_app = asyncio.get_event_loop().run_until_complete(get_app())
+work_app = current_loop.run_until_complete(get_app())
 
 def main():
     """Main application loop"""
@@ -372,17 +322,17 @@ def main():
     async def end():
         await work_app.shutdown()
 
-    asyncio.get_event_loop().run_until_complete(start())
+    current_loop.run_until_complete(start())
 
     # Main program
     try:
-        asyncio.get_event_loop().run_forever()
+        current_loop.run_forever()
     except KeyboardInterrupt:
         pass
     finally:
-        asyncio.get_event_loop().run_until_complete(end())
+        current_loop.run_until_complete(end())
 
-    asyncio.get_event_loop().close()
+    current_loop.close()
 
 if __name__ == "__main__":
     main()

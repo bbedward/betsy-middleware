@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: betsy-natrium
-        image: bananocoin/betsy:1.0.6
+        image: bananocoin/betsy:2.0.0
         command: ["/bin/bash", "-c"]
         args: ["python main.py --host 0.0.0.0 --port 5555 --bpow-nano-difficulty --callbacks http://natrium-server.natrium:5076/callback"]
         ports:
