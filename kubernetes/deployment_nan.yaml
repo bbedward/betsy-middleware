@@ -17,13 +17,13 @@ spec:
       - name: betsy-nano
         image: bananocoin/betsy:2.0.0
         command: ["/bin/bash", "-c"]
-        args: ["python main.py --host 0.0.0.0 --port 5555 --callbacks http://graham-nano.graham-nano:11337/callback http://graham-banano.graham-nano:11337/callback http://betsy-natrium.betsy:5555/callback --bpow-nano-difficulty"]
+        args: ["python main.py --host 0.0.0.0 --port 5555 --callbacks http://graham-nano.graham-nano:11337/callback http://graham-banano.graham-nano:11337/callback http://natrium-server.natrium:5076/callback --bpow-nano-difficulty"]
         ports:
         - containerPort: 5555
           name: api
         env:
           - name: REDIS_HOST
-            value: redis-0.redis
+            value: redis.redis
           - name: REDIS_DB
             value: "1"  
           - name: BPOW_KEY
