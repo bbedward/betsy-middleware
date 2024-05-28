@@ -122,9 +122,9 @@ async def work_generate(hash, app, precache=False, difficulty=None, reward=True)
         request['difficulty'] = difficulty
     tasks = []
     for p in WORK_URLS:
-        tasks.append(json_post(p, request, app=app))                                
+        tasks.append(asyncio.create_task(json_post(p, request, app=app)))                               
     if BPOW_ENABLED and not precache:
-        tasks.append(app['bpow'].request_work(hash, difficulty))
+        tasks.append(asyncio.create_task(app['bpow'].request_work(hash, difficulty)))
 
     if NODE_FALLBACK and app['failover']:
         # Failover to the node since we have some requests that are failing
