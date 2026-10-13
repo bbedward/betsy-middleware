@@ -267,7 +267,8 @@ async def get_app():
         log.server_logger.info("Opening redis connection")
         try:
             app['redis'] = await aioredis.create_redis_pool((os.getenv('REDIS_HOST', 'localhost'), 6379),
-                                                db=int(os.getenv('REDIS_DB', '1')), encoding='utf-8', minsize=2, maxsize=15)
+                                                db=int(os.getenv('REDIS_DB', '1')), password=os.getenv('REDIS_PASSWORD') or None,
+                                                encoding='utf-8', minsize=2, maxsize=15)
         except Exception:
             app['redis'] = None
             log.server_logger.warn('WARNING: Could not connect to Redis, work caching and some other features will not work')
